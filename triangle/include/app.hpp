@@ -2,10 +2,8 @@
 
 #include "window.hpp"
 
-namespace vkr
-{
-	class VkrApp
-	{
+namespace vkr {
+	class VkrApp {
 	public:
 		static constexpr int WIDTH = 800;
 		static constexpr int HEIGHT = 600;

@@ -6,15 +6,11 @@ using namespace std;
 
 int main()
 {
-	cout << "Hello World!" << endl;
 
 	vkr::VkrApp app{};
-	try
-	{
+	try {
 		app.run();
-	}
-	catch (const std::exception &e)
-	{
+	} catch (const std::exception &e) {
 		std::cerr << e.what() << endl;
 		return EXIT_FAILURE;
 	}
