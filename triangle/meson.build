@@ -13,5 +13,6 @@ executable('triangle',
            'src/app.cpp',
            'src/pipeline.cpp',
            'src/device.cpp',
+           'src/swapchain.cpp',
            include_directories : project_includes,
            dependencies: [glfw, vulkan])

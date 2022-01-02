@@ -24,6 +24,11 @@ namespace vkr
 		vkDestroyPipeline(device.device(), graphicsPipeline, nullptr);
 	}
 
+	void Pipeline::bind(VkCommandBuffer commandBuffer)
+	{
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+	}
+
 	std::vector<char> Pipeline::readFile(const std::string &fp)
 	{
 		std::ifstream file{fp, std::ios::ate | std::ios::binary};
@@ -48,9 +53,9 @@ namespace vkr
 	{
 
 		assert(configInfo.pipelineLayout != VK_NULL_HANDLE &&
-			   "Cannot create grahpics pipeline:: no pipelineLayout provided in configInfo");
+			   "Cannot create graphics pipeline:: no pipelineLayout provided in configInfo");
 		assert(configInfo.renderPass != VK_NULL_HANDLE &&
-			   "Cannot create grahpics pipeline:: no renderPass provided in configInfo");
+			   "Cannot create graphics pipeline:: no renderPass provided in configInfo");
 
 		auto vertCode = readFile(vertFP);
 		auto fragCode = readFile(fragFP);
@@ -68,6 +73,7 @@ namespace vkr
 		shaderStages[0].pName = "main";
 		shaderStages[0].flags = 0;
 		shaderStages[0].pNext = nullptr;
+		shaderStages[0].pSpecializationInfo = nullptr;
 
 		shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -75,6 +81,7 @@ namespace vkr
 		shaderStages[1].pName = "main";
 		shaderStages[1].flags = 0;
 		shaderStages[1].pNext = nullptr;
+		shaderStages[1].pSpecializationInfo = nullptr;
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -83,6 +90,14 @@ namespace vkr
 		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 		vertexInputInfo.pVertexBindingDescriptions = nullptr;
 
+		// can actually use multiple viewports/scissors on some GPUs
+		VkPipelineViewportStateCreateInfo viewportInfo{};
+		viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportInfo.viewportCount = 1;
+		viewportInfo.pViewports = &configInfo.viewport;
+		viewportInfo.scissorCount = 1;
+		viewportInfo.pScissors = &configInfo.scissor;
+
 		VkGraphicsPipelineCreateInfo pipelineInfo{};
 		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		// just vertex and fragment shader stages
@@ -90,7 +105,7 @@ namespace vkr
 		pipelineInfo.pStages = shaderStages;
 		pipelineInfo.pVertexInputState = &vertexInputInfo;
 		pipelineInfo.pInputAssemblyState = &configInfo.inputAssemblyInfo;
-		pipelineInfo.pViewportState = &configInfo.viewportInfo;
+		pipelineInfo.pViewportState = &viewportInfo;
 		pipelineInfo.pRasterizationState = &configInfo.rasterizationInfo;
 		pipelineInfo.pMultisampleState = &configInfo.multisampleInfo;
 		pipelineInfo.pColorBlendState = &configInfo.colorBlendInfo;
@@ -151,13 +166,6 @@ namespace vkr
 
 		configInfo.scissor.offset = {0, 0};
 		configInfo.scissor.extent = {width, height};
-
-		// can actually use multiple viewports/scissors on some GPUs
-		configInfo.viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-		configInfo.viewportInfo.viewportCount = 1;
-		configInfo.viewportInfo.pViewports = &configInfo.viewport;
-		configInfo.viewportInfo.scissorCount = 1;
-		configInfo.viewportInfo.pScissors = &configInfo.scissor;
 
 		configInfo.rasterizationInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		// usually want this off because stuff outside of 0,1 is probably not useful
