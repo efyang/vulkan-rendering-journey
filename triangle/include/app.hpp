@@ -1,6 +1,7 @@
 #pragma once
 
 #include "window.hpp"
+#include "pipeline.hpp"
 
 namespace vkr
 {
@@ -13,5 +14,8 @@ namespace vkr
 
 	private:
 		VkrWindow vkrWindow{WIDTH, HEIGHT, "Hello Vulkan!"};
+		Pipeline pipeline{
+			"shaders/simple_shader.vert.spv",
+			"shaders/simple_shader.frag.spv"};
 	};
 }
