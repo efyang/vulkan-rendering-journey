@@ -1,19 +1,24 @@
 #pragma once
 
-#include "window.hpp"
 #include "pipeline.hpp"
+#include "window.hpp"
 
-namespace vkr {
-	class VkrApp {
+namespace vkr
+{
+	class App
+	{
 	public:
 		static constexpr int WIDTH = 800;
 		static constexpr int HEIGHT = 600;
 		void run();
 
 	private:
-		VkrWindow vkrWindow{WIDTH, HEIGHT, "Hello Vulkan!"};
+		Window window{WIDTH, HEIGHT, "Hello Vulkan!"};
+		Device device{window};
 		Pipeline pipeline{
+			device,
 			"shaders/simple_shader.vert.spv",
-			"shaders/simple_shader.frag.spv"};
+			"shaders/simple_shader.frag.spv",
+			Pipeline::defaultPipelineConfigInfo(WIDTH, HEIGHT)};
 	};
 }

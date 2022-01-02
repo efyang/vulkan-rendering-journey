@@ -2,9 +2,9 @@
 
 namespace vkr
 {
-	void VkrApp::run()
+	void App::run()
 	{
-		while (!vkrWindow.shouldClose())
+		while (!window.shouldClose())
 		{
 			glfwPollEvents();
 		}

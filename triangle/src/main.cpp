@@ -7,10 +7,13 @@ using namespace std;
 int main()
 {
 
-	vkr::VkrApp app{};
-	try {
+	vkr::App app{};
+	try
+	{
 		app.run();
-	} catch (const std::exception &e) {
+	}
+	catch (const std::exception &e)
+	{
 		std::cerr << e.what() << endl;
 		return EXIT_FAILURE;
 	}

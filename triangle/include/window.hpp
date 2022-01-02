@@ -6,12 +6,13 @@
 #include <string>
 namespace vkr
 {
-	class VkrWindow
+	class Window
 	{
 	public:
-		VkrWindow(int w, int h, std::string name);
+		Window(int w, int h, std::string name);
 		bool shouldClose();
-		~VkrWindow();
+		void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface);
+		~Window();
 
 	private:
 		void init();

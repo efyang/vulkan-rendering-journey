@@ -12,5 +12,6 @@ executable('triangle',
            'src/window.cpp',
            'src/app.cpp',
            'src/pipeline.cpp',
+           'src/device.cpp',
            include_directories : project_includes,
            dependencies: [glfw, vulkan])
