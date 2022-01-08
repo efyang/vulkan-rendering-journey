@@ -15,5 +15,6 @@ executable('tutorial-engine',
            'src/pipeline.cpp',
            'src/device.cpp',
            'src/swapchain.cpp',
+           'src/model.cpp',
            include_directories : project_includes,
            dependencies: [glfw, vulkan, glm])

@@ -6,6 +6,7 @@ namespace vkr
 {
 	App::App()
 	{
+		loadModels();
 		createPipelineLayout();
 		createPipeline();
 		createCommandBuffers();
@@ -25,6 +26,52 @@ namespace vkr
 		}
 
 		vkDeviceWaitIdle(device.device());
+	}
+
+	std::vector<Model::Vertex> sierpinski(std::vector<Model::Vertex> vertices)
+	{
+		// demonstration, not very efficient (need inplace for that)
+		std::vector<Model::Vertex> newVertices;
+		// assume vertices is multiple of 3
+		for (size_t i = 0; i < vertices.size() / 3; i++)
+		{
+			auto v0 = vertices[3 * i].position;
+			auto v1 = vertices[3 * i + 1].position;
+			auto v2 = vertices[3 * i + 2].position;
+
+			auto v01 = (v0 + v1) * 0.5f;
+			auto v12 = (v1 + v2) * 0.5f;
+			auto v20 = (v2 + v0) * 0.5f;
+
+			newVertices.push_back({v0});
+			newVertices.push_back({v01});
+			newVertices.push_back({v20});
+
+			newVertices.push_back({v01});
+			newVertices.push_back({v1});
+			newVertices.push_back({v12});
+
+			newVertices.push_back({v20});
+			newVertices.push_back({v12});
+			newVertices.push_back({v2});
+		}
+		return newVertices;
+	}
+
+	void App::loadModels()
+	{
+		std::vector<Model::Vertex> vertices{
+			{{-1.0f, -1.0f}},
+			{{1.0f, -1.0f}},
+			{{0.0f, 1.0f}},
+		};
+
+		for (int i = 0; i < 5; i++)
+		{
+			vertices = sierpinski(vertices);
+		}
+
+		model = std::make_unique<Model>(device, vertices);
 	}
 
 	void App::createPipelineLayout()
@@ -101,7 +148,8 @@ namespace vkr
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 			pipeline->bind(commandBuffers[i]);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+			model->bind(commandBuffers[i]);
+			model->draw(commandBuffers[i]);
 
 			vkCmdEndRenderPass(commandBuffers[i]);
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
