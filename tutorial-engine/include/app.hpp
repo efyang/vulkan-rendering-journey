@@ -21,7 +21,7 @@ namespace vkr
 		void run();
 
 		App(const App &) = delete;			  // remove copy constructors
-		void operator=(const App &) = delete; // remove copy constructors
+		App &operator=(const App &) = delete; // remove copy constructors
 
 	private:
 		void loadModels();

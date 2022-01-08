@@ -35,25 +35,25 @@ namespace vkr
 		// assume vertices is multiple of 3
 		for (size_t i = 0; i < vertices.size() / 3; i++)
 		{
-			auto v0 = vertices[3 * i].position;
-			auto v1 = vertices[3 * i + 1].position;
-			auto v2 = vertices[3 * i + 2].position;
+			auto v0 = vertices[3 * i];
+			auto v1 = vertices[3 * i + 1];
+			auto v2 = vertices[3 * i + 2];
 
 			auto v01 = (v0 + v1) * 0.5f;
 			auto v12 = (v1 + v2) * 0.5f;
 			auto v20 = (v2 + v0) * 0.5f;
 
-			newVertices.push_back({v0});
-			newVertices.push_back({v01});
-			newVertices.push_back({v20});
+			newVertices.push_back(v0);
+			newVertices.push_back(v01);
+			newVertices.push_back(v20);
 
-			newVertices.push_back({v01});
-			newVertices.push_back({v1});
-			newVertices.push_back({v12});
+			newVertices.push_back(v01);
+			newVertices.push_back(v1);
+			newVertices.push_back(v12);
 
-			newVertices.push_back({v20});
-			newVertices.push_back({v12});
-			newVertices.push_back({v2});
+			newVertices.push_back(v20);
+			newVertices.push_back(v12);
+			newVertices.push_back(v2);
 		}
 		return newVertices;
 	}
@@ -61,9 +61,9 @@ namespace vkr
 	void App::loadModels()
 	{
 		std::vector<Model::Vertex> vertices{
-			{{-1.0f, -1.0f}},
-			{{1.0f, -1.0f}},
-			{{0.0f, 1.0f}},
+			{{-0.8f, -0.8f}, {1.0f, 0.0f, 0.0f}},
+			{{0.7f, -1.0f}, {0.0f, 1.0f, 0.0f}},
+			{{0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
 		};
 
 		for (int i = 0; i < 5; i++)

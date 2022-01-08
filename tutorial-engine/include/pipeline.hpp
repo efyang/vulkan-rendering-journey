@@ -33,8 +33,8 @@ namespace vkr
 			const PipelineConfigInfo &configInfo);
 		~Pipeline(); // pipeline handles resource lifetimes
 
-		Pipeline(const Pipeline &) = delete;	   // remove copy constructors
-		void operator=(const Pipeline &) = delete; // remove copy constructors
+		Pipeline(const Pipeline &) = delete;			// remove copy constructors
+		Pipeline &operator=(const Pipeline &) = delete; // remove copy constructors
 
 		void bind(VkCommandBuffer commandBuffer);
 		static PipelineConfigInfo defaultPipelineConfigInfo(uint32_t width, uint32_t height);
