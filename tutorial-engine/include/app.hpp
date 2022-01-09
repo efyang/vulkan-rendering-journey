@@ -27,8 +27,8 @@ namespace vkr
 		void loadModels();
 		Window window{WIDTH, HEIGHT, "Hello Vulkan!"};
 		Device device{window};
-		SwapChain swapchain{device, window.getExtent()};
 		std::unique_ptr<Pipeline> pipeline;
+		std::unique_ptr<SwapChain> swapchain;
 
 		VkPipelineLayout pipelineLayout;
 		std::vector<VkCommandBuffer> commandBuffers;
@@ -37,6 +37,9 @@ namespace vkr
 		void createPipelineLayout();
 		void createPipeline();
 		void createCommandBuffers();
+		void freeCommandBuffers();
 		void drawFrame();
+		void recreateSwapChain();
+		void recordCommandBuffer(int imageIndex);
 	};
 }

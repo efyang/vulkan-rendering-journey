@@ -21,13 +21,17 @@ namespace vkr
 			return {static_cast<uint32_t>(width),
 					static_cast<uint32_t>(height)};
 		}
+		bool wasWindowResize() { return frameBufferResized; }
+		void resetWindowResizedFlag() { frameBufferResized = false; }
 
 		void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface);
 
 	private:
+		static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
 		void init();
-		const int width;
-		const int height;
+		int width;
+		int height;
+		bool frameBufferResized = false;
 
 		std::string windowName;
 		GLFWwindow *window;
