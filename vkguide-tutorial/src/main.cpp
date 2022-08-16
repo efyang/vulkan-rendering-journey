@@ -8,7 +8,7 @@
 int main() {
   spdlog::info("Hello world!");
 
-  vkr::VkEngine engine;
+  vkr::VulkanEngine engine;
   engine.init();
   engine.run();
   engine.cleanup();

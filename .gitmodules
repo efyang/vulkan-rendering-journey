@@ -1,9 +1,25 @@
 [submodule "vkguide-tutorial/thirdparty/vk-bootstrap"]
 	path = vkguide-tutorial/thirdparty/vk-bootstrap
 	url = https://github.com/charles-lunarg/vk-bootstrap
-[submodule "vkguide-tutorial/thirdparty/VulkanMemoryAllocator"]
-	path = vkguide-tutorial/thirdparty/VulkanMemoryAllocator
-	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
 [submodule "vkguide-tutorial/thirdparty/stb"]
 	path = vkguide-tutorial/thirdparty/stb
 	url = https://github.com/nothings/stb
+[submodule "vkguide-tutorial/thirdparty/--orce"]
+	path = vkguide-tutorial/thirdparty/--orce
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+[submodule "vkguide-tutorial/thirdparty/--force"]
+	path = vkguide-tutorial/thirdparty/--force
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+[submodule "vkguide-tutorial/thirdparty/VulkanMemoryAllocator-Hpp"]
+	path = vkguide-tutorial/thirdparty/VulkanMemoryAllocator-Hpp
+	url = https://github.com/YaaZ/VulkanMemoryAllocator-Hpp
+[submodule "vkguide-tutorial/thirdparty/tinyobjloader"]
+	path = vkguide-tutorial/thirdparty/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader
+[submodule "vkguide-tutorial/thirdparty/vulkan-guide"]
+	path = vkguide-tutorial/thirdparty/vulkan-guide
+	url = https://github.com/vblanco20-1/vulkan-guide
+	branch = starting-point
+[submodule "vkguide-tutorial/thirdparty/OpenGL"]
+	path = vkguide-tutorial/thirdparty/OpenGL
+	url = https://github.com/McNopper/OpenGL

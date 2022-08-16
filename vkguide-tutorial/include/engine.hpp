@@ -1,5 +1,7 @@
 #pragma once
+#include <deque>
 #include <optional>
+#include <unordered_map>
 
 #include "SDL_shape.h"
 #include "SDL_stdinc.h"
@@ -7,13 +9,33 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
+
+#include "mesh.hpp"
 
 namespace vkr {
 
-class VkEngine {
+struct DeletionQueue {
+  std::deque<std::function<void()>> deletors;
+
+  void push_function(std::function<void()> &&function) {
+    deletors.push_back(function);
+  }
+
+  void flush() {
+    // reverse iterate the deletion queue to execute all the functions
+    for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+      (*it)(); // call the function
+    }
+
+    deletors.clear();
+  }
+};
+
+class VulkanEngine {
 public:
-  VkEngine();
+  VulkanEngine();
   void init();
   void run();
   void cleanup();
@@ -57,9 +79,25 @@ private:
   void init_sync_structures();
 
   std::optional<vk::ShaderModule> load_shader_module(const char *filePath);
+  std::unordered_map<std::string, std::string> m_shaderFiles;
+  std::unordered_map<std::string, vk::ShaderModule> m_shaderModules;
+  void init_shader_modules();
   void init_pipelines();
   vk::PipelineLayout m_trianglePipelineLayout;
-  vk::Pipeline m_trianglePipeline;
+  vk::Pipeline m_redTrianglePipeline;
+  vk::Pipeline m_fancyTrianglePipeline;
+
+  size_t m_selectedShader = 0;
+
+  vma::Allocator m_allocator;
+  DeletionQueue m_mainDeletionQueue;
+
+  vk::PipelineLayout m_meshPipelineLayout;
+  vk::Pipeline m_meshPipeline;
+  Mesh m_triangleMesh;
+  Mesh m_monkeyMesh;
+  void load_meshes();
+  void upload_mesh(Mesh &mesh);
 };
 
 } // namespace vkr

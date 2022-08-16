@@ -1,9 +1,11 @@
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <stdexcept>
 #include <vector>
 
 #include "SDL_events.h"
+#include "SDL_scancode.h"
 #include "SDL_video.h"
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -13,19 +15,24 @@
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_structs.hpp>
+
+#include <glm/gtx/transform.hpp>
+
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.hpp>
 
 #include "constants.h"
 #include "engine.hpp"
-#include "src/pipeline.hpp"
+#include "pipeline.hpp"
 #include "types.hpp"
 
 namespace vkr {
 
-VkEngine::VkEngine() {}
+VulkanEngine::VulkanEngine() {}
 
-void VkEngine::init() {
+void VulkanEngine::init() {
   // We initialize SDL and create a window with it.
   SDL_Init(SDL_INIT_VIDEO);
 
@@ -46,13 +53,15 @@ void VkEngine::init() {
   init_default_renderpass();
   init_framebuffers();
   init_sync_structures();
+  load_meshes();
+  init_shader_modules();
   init_pipelines();
 
   // everything went fine
   m_isInitialized = true;
 }
 
-void VkEngine::init_vulkan() {
+void VulkanEngine::init_vulkan() {
   vkb::InstanceBuilder instanceBuilder;
   auto vkb_inst = instanceBuilder.set_app_name(m_appName.c_str())
                       .request_validation_layers(true)
@@ -63,6 +72,11 @@ void VkEngine::init_vulkan() {
 
   m_instance = vkb_inst.instance;
   m_debugMessenger = vkb_inst.debug_messenger;
+
+  m_mainDeletionQueue.push_function([=]() {
+    vkb::destroy_debug_utils_messenger(m_instance, m_debugMessenger);
+  });
+
   spdlog::info("Initialized vulkan instance via vkb");
 
   SDL_Vulkan_CreateSurface(m_window, m_instance, (VkSurfaceKHR *)&m_surface);
@@ -102,9 +116,17 @@ void VkEngine::init_vulkan() {
       vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
   spdlog::info("Grabbed graphics queue with family {}", m_graphicsQueueFamily);
+
+  vma::AllocatorCreateInfo allocatorInfo;
+  allocatorInfo.physicalDevice = m_physicalDevice;
+  allocatorInfo.device = m_device;
+  allocatorInfo.instance = m_instance;
+  m_allocator = vma::createAllocator(allocatorInfo);
+  m_mainDeletionQueue.push_function([=]() { m_allocator.destroy(); });
+  spdlog::info("Created vma allocator");
 }
 
-void VkEngine::init_swapchain() {
+void VulkanEngine::init_swapchain() {
   vkb::SwapchainBuilder swapchainBuilder(m_physicalDevice, m_device, m_surface);
   vkb::Swapchain vkbSwapchain =
       swapchainBuilder.use_default_format_selection()
@@ -117,17 +139,23 @@ void VkEngine::init_swapchain() {
 
   m_swapchainImages = vkbSwapchain.get_images().value();
   m_swapchainImageViews = vkbSwapchain.get_image_views().value();
+
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroySwapchainKHR(m_swapchain); });
   spdlog::info("Successfully initialized swapchain with {} images",
                vkbSwapchain.image_count);
 }
 
-void VkEngine::init_commands() {
+void VulkanEngine::init_commands() {
   vk::CommandPoolCreateFlags commandPoolCreateFlags;
   // allow resetting individual command buffers
   commandPoolCreateFlags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
   vk::CommandPoolCreateInfo commandPoolCreateInfo(commandPoolCreateFlags,
                                                   m_graphicsQueueFamily);
   m_commandPool = m_device.createCommandPool(commandPoolCreateInfo);
+
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroyCommandPool(m_commandPool); });
 
   vk::CommandBufferAllocateInfo commandBufferAllocateInfo(
       m_commandPool, VULKAN_HPP_NAMESPACE::CommandBufferLevel::ePrimary, 1);
@@ -138,7 +166,7 @@ void VkEngine::init_commands() {
                commandBufferAllocateInfo.commandBufferCount);
 }
 
-void VkEngine::init_default_renderpass() {
+void VulkanEngine::init_default_renderpass() {
   vk::AttachmentDescription colorAttachment;
   colorAttachment.format = m_swapchainImageFormat;
   // no msaa
@@ -170,10 +198,12 @@ void VkEngine::init_default_renderpass() {
   renderPassInfo.pSubpasses = &subpass;
   m_renderPass = m_device.createRenderPass(renderPassInfo);
 
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroyRenderPass(m_renderPass); });
   spdlog::info("Initialized renderpass");
 }
 
-void VkEngine::init_framebuffers() {
+void VulkanEngine::init_framebuffers() {
   vk::FramebufferCreateInfo fbInfo;
   fbInfo.renderPass = m_renderPass;
   fbInfo.attachmentCount = 1;
@@ -186,23 +216,36 @@ void VkEngine::init_framebuffers() {
     auto iv = vk::ImageView(m_swapchainImageViews[i]);
     fbInfo.pAttachments = &iv;
     m_framebuffers[i] = m_device.createFramebuffer(fbInfo);
+
+    m_mainDeletionQueue.push_function([=]() {
+      m_device.destroyFramebuffer(m_framebuffers[i]);
+      m_device.destroyImageView(m_swapchainImageViews[i]);
+    });
   }
 
   spdlog::info("Initialized framebuffers");
 }
 
-void VkEngine::init_sync_structures() {
+void VulkanEngine::init_sync_structures() {
   vk::FenceCreateInfo fenceCreateInfo;
   // create so that the fence is default signaled
   fenceCreateInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
   m_renderFence = m_device.createFence(fenceCreateInfo);
 
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroyFence(m_renderFence); });
+
   vk::SemaphoreCreateInfo semaphoreCreateInfo;
   m_presentSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
   m_renderSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
+
+  m_mainDeletionQueue.push_function([=]() {
+    m_device.destroySemaphore(m_renderSemaphore);
+    m_device.destroySemaphore(m_presentSemaphore);
+  });
 }
 
-void VkEngine::run() {
+void VulkanEngine::run() {
   SDL_Event e;
   bool quit = false;
 
@@ -220,6 +263,9 @@ void VkEngine::run() {
         break;
       case SDL_KEYUP:
         std::printf("Keyup %d\n", e.key.keysym.scancode);
+        if (e.key.keysym.scancode == SDL_SCANCODE_SPACE) {
+          m_selectedShader = (m_selectedShader + 1) % 4;
+        }
         break;
       }
     }
@@ -228,35 +274,25 @@ void VkEngine::run() {
   }
 }
 
-void VkEngine::cleanup() {
+void VulkanEngine::cleanup() {
   if (!m_isInitialized) {
     return;
   }
 
-  m_device.destroySwapchainKHR(m_swapchain);
+  // wait for gpu idle
+  (void)m_device.waitForFences(m_renderFence, true, S_TO_NS);
 
-  m_device.destroyRenderPass(m_renderPass);
-  for (uint32_t i = 0; i < m_framebuffers.size(); i++) {
-    m_device.destroyFramebuffer(m_framebuffers[i]);
-    m_device.destroyImageView(m_swapchainImageViews[i]);
-  }
-
-  m_device.destroyCommandPool(m_commandPool);
-
-  m_device.destroySemaphore(m_renderSemaphore);
-  m_device.destroySemaphore(m_presentSemaphore);
-  m_device.destroyFence(m_renderFence);
+  m_mainDeletionQueue.flush();
 
   m_device.destroy();
   m_instance.destroySurfaceKHR(m_surface);
-  vkb::destroy_debug_utils_messenger(m_instance, m_debugMessenger);
   m_instance.destroy();
   SDL_DestroyWindow(m_window);
   spdlog::info("Engine cleaned up");
 }
 
 std::optional<vk::ShaderModule>
-VkEngine::load_shader_module(const char *filePath) {
+VulkanEngine::load_shader_module(const char *filePath) {
   // ate needed for tellg
   std::ifstream file(filePath, std::ios::ate | std::ios::binary);
   if (!file.is_open()) {
@@ -273,26 +309,35 @@ VkEngine::load_shader_module(const char *filePath) {
   vk::ShaderModuleCreateInfo createInfo;
   createInfo.setCode(buffer);
 
-  return m_device.createShaderModule(createInfo);
+  auto sm = m_device.createShaderModule(createInfo);
+  // can be deleted right after pipeline is init, but I want to keep them
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroyShaderModule(sm); });
+  return sm;
 }
 
-void VkEngine::init_pipelines() {
-  auto triFrag = load_shader_module("build/assets/shaders/triangle.frag.spv");
-  if (!triFrag.has_value()) {
-    spdlog::error("Failed to load triangle fragment shader");
-    throw std::runtime_error("Cannot continue");
-  } else {
-    spdlog::info("Loaded triangle fragment shader successfully");
-  }
+void VulkanEngine::init_shader_modules() {
+  m_shaderFiles = {
+      {"redtri.vert", "build/assets/shaders/triangle.vert.spv"},
+      {"redtri.frag", "build/assets/shaders/triangle.frag.spv"},
+      {"fancytri.vert", "build/assets/shaders/fancytriangle.vert.spv"},
+      {"fancytri.frag", "build/assets/shaders/fancytriangle.frag.spv"},
+      {"trimesh.vert", "build/assets/shaders/tri_mesh.vert.spv"},
+  };
 
-  auto triVert = load_shader_module("build/assets/shaders/triangle.vert.spv");
-  if (!triVert.has_value()) {
-    spdlog::error("Failed to load triangle vertex shader");
-    throw std::runtime_error("Cannot continue");
-  } else {
-    spdlog::info("Loaded triangle vertex shader successfully");
+  for (auto shader : m_shaderFiles) {
+    auto mod = load_shader_module(shader.second.c_str());
+    if (!mod.has_value()) {
+      spdlog::error("Failed to load {} shader", shader.first);
+      throw std::runtime_error("Cannot continue");
+    } else {
+      spdlog::info("Loaded {} shader successfully", shader.first);
+      m_shaderModules[shader.first] = mod.value();
+    }
   }
+}
 
+void VulkanEngine::init_pipelines() {
   vk::PipelineLayoutCreateInfo pipeline_layout_info =
       PipelineBuilder::default_pipeline_layout_create_info();
   m_trianglePipelineLayout =
@@ -302,10 +347,10 @@ void VkEngine::init_pipelines() {
   PipelineBuilder pipelineBuilder;
   pipelineBuilder.shaderStages.push_back(
       PipelineBuilder::default_pipeline_shader_stage_create_info(
-          vk::ShaderStageFlagBits::eVertex, triVert.value()));
+          vk::ShaderStageFlagBits::eVertex, m_shaderModules["redtri.vert"]));
   pipelineBuilder.shaderStages.push_back(
       PipelineBuilder::default_pipeline_shader_stage_create_info(
-          vk::ShaderStageFlagBits::eFragment, triFrag.value()));
+          vk::ShaderStageFlagBits::eFragment, m_shaderModules["redtri.frag"]));
 
   // vertex input controls how to read vertices from vertex buffers. We aren't
   // using it yet
@@ -335,11 +380,60 @@ void VkEngine::init_pipelines() {
   pipelineBuilder.colorBlendAttachment =
       PipelineBuilder::default_color_blend_attachment_state();
   pipelineBuilder.pipelineLayout = m_trianglePipelineLayout;
-  m_trianglePipeline = pipelineBuilder.build(m_device, m_renderPass);
-  spdlog::info("Finished building pipeline");
+  m_redTrianglePipeline = pipelineBuilder.build(m_device, m_renderPass);
+
+  spdlog::info("Finished building red triangle pipeline");
+
+  pipelineBuilder.shaderStages.clear();
+
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eVertex, m_shaderModules["fancytri.vert"]));
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eFragment,
+          m_shaderModules["fancytri.frag"]));
+  m_fancyTrianglePipeline = pipelineBuilder.build(m_device, m_renderPass);
+
+  spdlog::info("Finished building fancy triangle pipeline");
+
+  vk::PipelineLayoutCreateInfo meshPipelineLayoutInfo =
+      PipelineBuilder::default_pipeline_layout_create_info();
+  vk::PushConstantRange pushConstant;
+  pushConstant.setSize(sizeof(MeshPushConstants))
+      .setOffset(0)
+      .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+  meshPipelineLayoutInfo.setPushConstantRanges(pushConstant);
+  m_meshPipelineLayout = m_device.createPipelineLayout(meshPipelineLayoutInfo);
+
+  pipelineBuilder.shaderStages.clear();
+  VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+  pipelineBuilder.vertexInputInfo.setVertexAttributeDescriptions(
+      vertexDescription.attributes);
+  pipelineBuilder.vertexInputInfo.setVertexBindingDescriptions(
+      vertexDescription.bindings);
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eVertex, m_shaderModules["trimesh.vert"]));
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eFragment,
+          m_shaderModules["fancytri.frag"]));
+  pipelineBuilder.pipelineLayout = m_meshPipelineLayout;
+  m_meshPipeline = pipelineBuilder.build(m_device, m_renderPass);
+
+  m_mainDeletionQueue.push_function([=]() {
+    m_device.destroyPipeline(m_fancyTrianglePipeline);
+    m_device.destroyPipeline(m_redTrianglePipeline);
+    m_device.destroyPipeline(m_meshPipeline);
+    m_device.destroyPipelineLayout(m_trianglePipelineLayout);
+    m_device.destroyPipelineLayout(m_meshPipelineLayout);
+  });
+
+  spdlog::info("Finished building mesh triangle pipeline");
 }
 
-void VkEngine::draw() {
+void VulkanEngine::draw() {
   // timeout in ns
   (void)m_device.waitForFences(m_renderFence, true, S_TO_NS);
   m_device.resetFences(m_renderFence);
@@ -371,9 +465,52 @@ void VkEngine::draw() {
   rpInfo.setClearValues(clearValue);
   m_mainCommandBuffer.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 
-  m_mainCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                   m_trianglePipeline);
-  m_mainCommandBuffer.draw(3, 1, 0, 0);
+  if (m_selectedShader == 0) {
+    m_mainCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                     m_redTrianglePipeline);
+    m_mainCommandBuffer.draw(3, 1, 0, 0);
+  } else if (m_selectedShader == 1) {
+    m_mainCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                     m_fancyTrianglePipeline);
+    m_mainCommandBuffer.draw(3, 1, 0, 0);
+  } else {
+    Mesh *mesh;
+    if (m_selectedShader == 2) {
+      mesh = &m_triangleMesh;
+    } else {
+      mesh = &m_monkeyMesh;
+    }
+
+    m_mainCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                     m_meshPipeline);
+    vk::DeviceSize offset = 0;
+    m_mainCommandBuffer.bindVertexBuffers(0, 1, &mesh->vertexBuffer.buffer,
+                                          &offset);
+    // make a model view matrix for rendering the object
+    // camera position
+    glm::vec3 camPos = {0.f, 0.f, -2.f};
+
+    glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
+    // camera projection
+    glm::mat4 projection =
+        glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
+    projection[1][1] *= -1;
+    // model rotation
+    glm::mat4 model =
+        glm::rotate(glm::mat4{1.0f}, glm::radians(m_frameNumber * 0.4f),
+                    glm::vec3(0, 1, 0));
+
+    // calculate final mesh matrix
+    glm::mat4 mesh_matrix = projection * view * model;
+
+    MeshPushConstants constants;
+    constants.render_matrix = mesh_matrix;
+    m_mainCommandBuffer.pushConstants(m_meshPipelineLayout,
+                                      vk::ShaderStageFlagBits::eVertex, 0,
+                                      sizeof(MeshPushConstants), &constants);
+
+    m_mainCommandBuffer.draw(mesh->vertices.size(), 1, 0, 0);
+  }
 
   // finish populating the buffer
   m_mainCommandBuffer.endRenderPass();
@@ -400,6 +537,58 @@ void VkEngine::draw() {
     spdlog::info("Frame {}", m_frameNumber);
   }
   m_frameNumber++;
+}
+
+// todo: move to mesh.cpp?
+// mesh cache would be cool to avoid reuploading meshes
+void VulkanEngine::load_meshes() {
+  m_triangleMesh.vertices.resize(3);
+  m_triangleMesh.vertices[0].position = {1, 1, 0};
+  m_triangleMesh.vertices[1].position = {-1, 1, 0};
+  m_triangleMesh.vertices[2].position = {0, -1, 0};
+
+  m_triangleMesh.vertices[0].color = {1, 0, 0};
+  m_triangleMesh.vertices[1].color = {0, 1, 0};
+  m_triangleMesh.vertices[2].color = {0, 0, 1};
+
+  auto tryMonkeyMesh =
+      Mesh::load_from_obj("thirdparty/vulkan-guide/assets/monkey_smooth.obj");
+  if (!tryMonkeyMesh.has_value()) {
+    throw std::runtime_error("Cannot continue without monkey mesh");
+  } else {
+    m_monkeyMesh = tryMonkeyMesh.value();
+    spdlog::info("Loaded monkey mesh from obj");
+  }
+
+  upload_mesh(m_monkeyMesh);
+  spdlog::info("Uploaded monkey mesh");
+  upload_mesh(m_triangleMesh);
+  spdlog::info("Uploaded triangle mesh");
+}
+
+void VulkanEngine::upload_mesh(Mesh &mesh) {
+  vk::BufferCreateInfo bufferInfo;
+  bufferInfo.setSize(mesh.vertices.size() * sizeof(Vertex));
+  bufferInfo.setUsage(vk::BufferUsageFlagBits::eVertexBuffer);
+
+  // let the VMA library know that this data should be writeable by CPU, but
+  // also readable by GPU
+  vma::AllocationCreateInfo allocInfo;
+  allocInfo.setUsage(vma::MemoryUsage::eCpuToGpu);
+
+  auto allocated = m_allocator.createBuffer(bufferInfo, allocInfo);
+  mesh.vertexBuffer.buffer = allocated.first;
+  mesh.vertexBuffer.allocation = allocated.second;
+  m_mainDeletionQueue.push_function([=]() {
+    m_allocator.destroyBuffer(mesh.vertexBuffer.buffer,
+                              mesh.vertexBuffer.allocation);
+  });
+
+  void *data = m_allocator.mapMemory(mesh.vertexBuffer.allocation);
+  std::memcpy(data, mesh.vertices.data(), bufferInfo.size);
+  m_allocator.unmapMemory(mesh.vertexBuffer.allocation);
+
+  spdlog::info("Uploaded mesh of size {}", bufferInfo.size);
 }
 
 } // namespace vkr
