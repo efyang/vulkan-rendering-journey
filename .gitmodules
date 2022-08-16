@@ -1,0 +1,9 @@
+[submodule "vkguide-tutorial/thirdparty/vk-bootstrap"]
+	path = vkguide-tutorial/thirdparty/vk-bootstrap
+	url = https://github.com/charles-lunarg/vk-bootstrap
+[submodule "vkguide-tutorial/thirdparty/VulkanMemoryAllocator"]
+	path = vkguide-tutorial/thirdparty/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+[submodule "vkguide-tutorial/thirdparty/stb"]
+	path = vkguide-tutorial/thirdparty/stb
+	url = https://github.com/nothings/stb
