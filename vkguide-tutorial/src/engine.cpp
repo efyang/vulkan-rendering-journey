@@ -15,10 +15,9 @@
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_structs.hpp>
 
 #include <glm/gtx/transform.hpp>
+#include <vulkan/vulkan_enums.hpp>
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.hpp>
@@ -144,6 +143,45 @@ void VulkanEngine::init_swapchain() {
       [=]() { m_device.destroySwapchainKHR(m_swapchain); });
   spdlog::info("Successfully initialized swapchain with {} images",
                vkbSwapchain.image_count);
+
+  // allocate depth image
+  vk::Extent3D depthImageExtent(m_windowExtent.width, m_windowExtent.height, 1);
+  m_depthFormat = vk::Format::eD32Sfloat;
+  vk::ImageCreateInfo dimgInfo;
+  dimgInfo.setFormat(m_depthFormat)
+      .setImageType(vk::ImageType::e2D)
+      .setExtent(depthImageExtent)
+      .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment)
+      .setMipLevels(1)
+      .setArrayLayers(1)
+      .setSamples(vk::SampleCountFlagBits::e1)
+      .setTiling(vk::ImageTiling::eOptimal);
+  vma::AllocationCreateInfo dimgAllocInfo;
+  // usage is only a hint, flag actually forces gpu allocation
+  dimgAllocInfo.setUsage(vma::MemoryUsage::eGpuOnly)
+      .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+  auto dimg_alloc = m_allocator.createImage(dimgInfo, dimgAllocInfo);
+  m_depthImage.image = dimg_alloc.first;
+  m_depthImage.allocation = dimg_alloc.second;
+
+  vk::ImageViewCreateInfo dviewInfo;
+  vk::ImageSubresourceRange dviewInfoSubresourceRange;
+  dviewInfoSubresourceRange.setAspectMask(vk::ImageAspectFlagBits::eDepth)
+      .setBaseMipLevel(0)
+      .setLevelCount(1)
+      .setBaseArrayLayer(0)
+      .setLayerCount(1);
+  dviewInfo.setFormat(m_depthFormat)
+      .setViewType(vk::ImageViewType::e2D)
+      .setImage(m_depthImage.image)
+      .setSubresourceRange(dviewInfoSubresourceRange);
+  m_depthImageView = m_device.createImageView(dviewInfo);
+  m_mainDeletionQueue.push_function([=]() {
+    m_device.destroyImageView(m_depthImageView);
+    m_allocator.destroyImage(m_depthImage.image, m_depthImage.allocation);
+  });
+
+  spdlog::info("Allocated depth image");
 }
 
 void VulkanEngine::init_commands() {
@@ -169,33 +207,60 @@ void VulkanEngine::init_commands() {
 void VulkanEngine::init_default_renderpass() {
   vk::AttachmentDescription colorAttachment;
   colorAttachment.format = m_swapchainImageFormat;
-  // no msaa
   colorAttachment.samples = vk::SampleCountFlagBits::e1;
-  // clear on load
   colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-  // store on end
   colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
   colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
   colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-
   colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
-  // layout for presentation
   colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
   vk::AttachmentReference colorAttachmentRef(
       {}, vk::ImageLayout::eColorAttachmentOptimal);
 
+  vk::AttachmentDescription depthAttachment;
+  depthAttachment.setFormat(m_depthFormat)
+      .setSamples(vk::SampleCountFlagBits::e1)
+      .setLoadOp(vk::AttachmentLoadOp::eClear)
+      .setStoreOp(vk::AttachmentStoreOp::eStore)
+      .setStencilLoadOp(vk::AttachmentLoadOp::eClear)
+      .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+      .setInitialLayout(vk::ImageLayout::eUndefined)
+      .setFinalLayout(vk::ImageLayout::eStencilAttachmentOptimal);
+  vk::AttachmentReference depthAttachmentRef;
+  depthAttachmentRef.setAttachment(1).setLayout(
+      vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
   // 1 subpass
   vk::SubpassDescription subpass;
-  subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-  subpass.colorAttachmentCount = 1;
-  subpass.pColorAttachments = &colorAttachmentRef;
+  subpass.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+      .setColorAttachments(colorAttachmentRef)
+      .setPDepthStencilAttachment(&depthAttachmentRef);
+
+  vk::SubpassDependency colorDep;
+  colorDep.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+      .setDstSubpass(0)
+      .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+      .setSrcAccessMask({})
+      .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+      .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
+
+  vk::SubpassDependency depthDep;
+  depthDep.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+      .setDstSubpass(0)
+      .setSrcStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                       vk::PipelineStageFlagBits::eLateFragmentTests)
+      .setSrcAccessMask({})
+      .setDstStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                       vk::PipelineStageFlagBits::eLateFragmentTests)
+      .setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+
+  auto dependencies = {colorDep, depthDep};
 
   vk::RenderPassCreateInfo renderPassInfo;
-  renderPassInfo.attachmentCount = 1;
-  renderPassInfo.pAttachments = &colorAttachment;
-  renderPassInfo.subpassCount = 1;
-  renderPassInfo.pSubpasses = &subpass;
+  auto attachments = {colorAttachment, depthAttachment};
+  renderPassInfo.setAttachments(attachments)
+      .setSubpasses(subpass)
+      .setDependencies(dependencies);
   m_renderPass = m_device.createRenderPass(renderPassInfo);
 
   m_mainDeletionQueue.push_function(
@@ -206,7 +271,6 @@ void VulkanEngine::init_default_renderpass() {
 void VulkanEngine::init_framebuffers() {
   vk::FramebufferCreateInfo fbInfo;
   fbInfo.renderPass = m_renderPass;
-  fbInfo.attachmentCount = 1;
   fbInfo.width = m_windowExtent.width;
   fbInfo.height = m_windowExtent.height;
   fbInfo.layers = 1;
@@ -214,7 +278,8 @@ void VulkanEngine::init_framebuffers() {
   m_framebuffers = std::vector<vk::Framebuffer>(m_swapchainImages.size());
   for (uint32_t i = 0; i < m_swapchainImages.size(); i++) {
     auto iv = vk::ImageView(m_swapchainImageViews[i]);
-    fbInfo.pAttachments = &iv;
+    auto attachments = {iv, m_depthImageView};
+    fbInfo.setAttachments(attachments);
     m_framebuffers[i] = m_device.createFramebuffer(fbInfo);
 
     m_mainDeletionQueue.push_function([=]() {
@@ -420,6 +485,9 @@ void VulkanEngine::init_pipelines() {
           vk::ShaderStageFlagBits::eFragment,
           m_shaderModules["fancytri.frag"]));
   pipelineBuilder.pipelineLayout = m_meshPipelineLayout;
+  pipelineBuilder.depthStencil =
+      PipelineBuilder::default_depth_stencil_create_info(
+          true, true, vk::CompareOp::eLessOrEqual);
   m_meshPipeline = pipelineBuilder.build(m_device, m_renderPass);
 
   m_mainDeletionQueue.push_function([=]() {
@@ -455,6 +523,10 @@ void VulkanEngine::draw() {
   vk::ClearValue clearValue;
   float flash = abs(sin(m_frameNumber / 120.f));
   clearValue.color.setFloat32({1 - flash, 0.0f, flash, 1.0f});
+
+  vk::ClearValue depthClear;
+  depthClear.depthStencil.setDepth(1.f);
+
   // begin main renderpass
   vk::RenderPassBeginInfo rpInfo;
   rpInfo.renderPass = m_renderPass;
@@ -462,7 +534,8 @@ void VulkanEngine::draw() {
   rpInfo.renderArea.extent = m_windowExtent;
   rpInfo.framebuffer = m_framebuffers[swapchainImageIndex];
 
-  rpInfo.setClearValues(clearValue);
+  auto clearValues = {clearValue, depthClear};
+  rpInfo.setClearValues(clearValues);
   m_mainCommandBuffer.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 
   if (m_selectedShader == 0) {

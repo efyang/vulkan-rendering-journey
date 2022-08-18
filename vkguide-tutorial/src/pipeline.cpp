@@ -28,6 +28,7 @@ vk::Pipeline PipelineBuilder::build(vk::Device device, vk::RenderPass pass) {
   pipelineInfo.renderPass = pass;
   pipelineInfo.subpass = 0;
   pipelineInfo.setBasePipelineHandle(VK_NULL_HANDLE);
+  pipelineInfo.setPDepthStencilState(&depthStencil);
 
   vk::Pipeline pipeline =
       device.createGraphicsPipeline(VK_NULL_HANDLE, pipelineInfo).value;
@@ -107,4 +108,20 @@ PipelineBuilder::default_pipeline_layout_create_info() {
 
   return info;
 }
+
+vk::PipelineDepthStencilStateCreateInfo
+PipelineBuilder::default_depth_stencil_create_info(bool bDepthTest,
+                                                   bool bDepthWrite,
+                                                   vk::CompareOp compareOp) {
+  vk::PipelineDepthStencilStateCreateInfo info;
+  info.setDepthTestEnable(bDepthTest)
+      .setDepthWriteEnable(bDepthWrite)
+      .setDepthCompareOp(bDepthTest ? compareOp : vk::CompareOp::eAlways)
+      .setDepthBoundsTestEnable(false)
+      .setMinDepthBounds(0.f)
+      .setMaxDepthBounds(1.f)
+      .setStencilTestEnable(false);
+  return info;
+}
+
 } // namespace vkr

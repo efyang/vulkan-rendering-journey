@@ -98,6 +98,10 @@ private:
   Mesh m_monkeyMesh;
   void load_meshes();
   void upload_mesh(Mesh &mesh);
+
+  vk::ImageView m_depthImageView;
+  AllocatedImage m_depthImage;
+  vk::Format m_depthFormat;
 };
 
 } // namespace vkr

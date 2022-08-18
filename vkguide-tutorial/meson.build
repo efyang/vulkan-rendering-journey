@@ -24,6 +24,7 @@ dep_sdl2 = dependency('sdl2')
 dep_glm = dependency('glm')
 dep_spdlog = dependency('spdlog')
 dep_assimp = dependency('assimp')
+dep_imgui = dependency('imgui')
 
 subdir('assets/shaders')
 main_inc = include_directories('include')
@@ -34,6 +35,7 @@ vma_inc = include_directories('thirdparty/VulkanMemoryAllocator-Hpp/VulkanMemory
 vma_hpp_inc = include_directories('thirdparty/VulkanMemoryAllocator-Hpp/include') # for headers in build folder
 stb_inc = include_directories('thirdparty/stb')
 tinyobjloader_inc = include_directories('thirdparty/tinyobjloader')
+imgui_inc = include_directories('subprojects/imgui-1.87')
 
 src = [
 	'src/pipeline.cpp',
@@ -51,6 +53,7 @@ executable('engine',
 		dep_glm,
 		dep_spdlog,
 		dep_assimp,
+		dep_imgui,
 		],
 	include_directories: [
 		main_inc,
@@ -59,4 +62,5 @@ executable('engine',
 		vma_inc,
 		vma_hpp_inc,
 		tinyobjloader_inc,
+		imgui_inc,
 		])

@@ -18,6 +18,7 @@ public:
   vk::PipelineRasterizationStateCreateInfo rasterizer;
   vk::PipelineColorBlendAttachmentState colorBlendAttachment;
   vk::PipelineMultisampleStateCreateInfo multisampling;
+  vk::PipelineDepthStencilStateCreateInfo depthStencil;
   vk::PipelineLayout pipelineLayout;
 
   vk::Pipeline build(vk::Device device, vk::RenderPass pass);
@@ -41,6 +42,10 @@ public:
   default_color_blend_attachment_state();
 
   static vk::PipelineLayoutCreateInfo default_pipeline_layout_create_info();
+
+  static vk::PipelineDepthStencilStateCreateInfo
+  default_depth_stencil_create_info(bool bDepthTest, bool bDepthWrite,
+                                    vk::CompareOp compareOp);
 
 private:
 };
