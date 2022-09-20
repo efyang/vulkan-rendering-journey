@@ -1,8 +1,5 @@
 glsllang = find_program('glslangValidator')
 shaders = [
-	'triangle.vert',
-	'triangle.frag',
-	'fancytriangle.vert',
 	'fancytriangle.frag',
 	'tri_mesh.vert',
 ]  # full path with .glsl extension (or from subdir with files() extension)

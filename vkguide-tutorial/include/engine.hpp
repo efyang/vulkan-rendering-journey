@@ -1,20 +1,35 @@
 #pragma once
 #include <deque>
+#include <functional>
 #include <optional>
-#include <unordered_map>
+#include <set>
 
+#include "SDL_events.h"
+#include "SDL_scancode.h"
 #include "SDL_shape.h"
 #include "SDL_stdinc.h"
 #include "SDL_video.h"
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include "mesh.hpp"
 
 namespace vkr {
+
+struct Material {
+  VkPipeline pipeline;
+  VkPipelineLayout pipelineLayout;
+};
+
+struct RenderObject {
+  Mesh *mesh;
+  Material *material;
+  glm::mat4 transformMatrix;
+};
 
 struct DeletionQueue {
   std::deque<std::function<void()>> deletors;
@@ -31,6 +46,10 @@ struct DeletionQueue {
 
     deletors.clear();
   }
+};
+
+struct Inputs {
+  std::set<SDL_Scancode> keyPressed;
 };
 
 class VulkanEngine {
@@ -83,25 +102,38 @@ private:
   std::unordered_map<std::string, vk::ShaderModule> m_shaderModules;
   void init_shader_modules();
   void init_pipelines();
-  vk::PipelineLayout m_trianglePipelineLayout;
-  vk::Pipeline m_redTrianglePipeline;
-  vk::Pipeline m_fancyTrianglePipeline;
-
-  size_t m_selectedShader = 0;
 
   vma::Allocator m_allocator;
   DeletionQueue m_mainDeletionQueue;
 
   vk::PipelineLayout m_meshPipelineLayout;
   vk::Pipeline m_meshPipeline;
+
+  vk::ImageView m_depthImageView;
+  AllocatedImage m_depthImage;
+  vk::Format m_depthFormat;
+
+  std::vector<RenderObject> m_renderables;
+  std::unordered_map<std::string, Material> m_materials;
+  std::unordered_map<std::string, Mesh> m_meshes;
+  Material *create_material(VkPipeline pipeline, VkPipelineLayout layout,
+                            const std::string &name);
+  Material *get_material(const std::string &name);
+  Mesh *get_mesh(const std::string &name);
+  void draw_objects(vk::CommandBuffer cmd, RenderObject *first, int count);
+
   Mesh m_triangleMesh;
   Mesh m_monkeyMesh;
   void load_meshes();
   void upload_mesh(Mesh &mesh);
 
-  vk::ImageView m_depthImageView;
-  AllocatedImage m_depthImage;
-  vk::Format m_depthFormat;
+  void init_scene();
+
+  glm::mat4 m_viewMatrix;
+
+  Inputs m_inputs;
+  void input_handle_keydown(SDL_Scancode &key);
+  void input_handle_keyup(SDL_Scancode &key);
 };
 
 } // namespace vkr
