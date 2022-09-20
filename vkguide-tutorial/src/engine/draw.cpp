@@ -5,6 +5,9 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 
+#include <algorithm>
+#include <vector>
+
 #include "constants.h"
 #include "engine.hpp"
 
@@ -84,10 +87,21 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
   // TODO: why?
   projection[1][1] *= -1;
 
+  // sort renderobjects by material
+  std::vector<RenderObject> sortedRenderObjects;
+  for (int i = 0; i < count; i++) {
+    sortedRenderObjects.push_back(*(first + i));
+  }
+  std::sort(sortedRenderObjects.begin(), sortedRenderObjects.end(),
+            [](RenderObject &a, RenderObject &b) {
+              return (uint64_t)a.material < (uint64_t)b.material;
+            });
+
+  // render each renderObject
   Mesh *lastMesh = nullptr;
   Material *lastMaterial = nullptr;
   for (int i = 0; i < count; i++) {
-    RenderObject &object = first[i];
+    RenderObject &object = sortedRenderObjects[i];
     if (object.material != lastMaterial) {
       cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                        object.material->pipeline);

@@ -76,8 +76,8 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
           new_vert.position[i] = attrib.vertices[fv * idx.vertex_index + i];
           new_vert.normal[i] = attrib.normals[fv * idx.normal_index + i];
           // set vert colors as normals for now
-          // new_vert.color[i] = attrib.colors[fv * idx.normal_index + i];
-          new_vert.color = (new_vert.normal + 1.f) / 2.f;
+          new_vert.color[i] = attrib.colors[fv * idx.vertex_index + i];
+          // new_vert.color = (new_vert.normal + 1.f) / 2.f;
         }
         m.vertices.push_back(new_vert);
       }

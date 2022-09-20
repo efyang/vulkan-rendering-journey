@@ -33,8 +33,11 @@ VulkanEngine::load_shader_module(const char *filePath) {
 
 void VulkanEngine::init_shader_modules() {
   m_shaderFiles = {
-      {"fancytri.frag", "build/assets/shaders/fancytriangle.frag.spv"},
-      {"trimesh.vert", "build/assets/shaders/tri_mesh.vert.spv"},
+      {"basic_flat_mesh.frag", "build/assets/shaders/basic_flat_mesh.frag.spv"},
+      {"basic_normalcolor_mesh.vert",
+       "build/assets/shaders/basic_normalcolor_mesh.vert.spv"},
+      {"basic_vertexcolor_mesh.vert",
+       "build/assets/shaders/basic_vertexcolor_mesh.vert.spv"},
   };
 
   for (auto shader : m_shaderFiles) {

@@ -346,11 +346,12 @@ void VulkanEngine::init_pipelines() {
       vertexDescription.bindings);
   pipelineBuilder.shaderStages.push_back(
       PipelineBuilder::default_pipeline_shader_stage_create_info(
-          vk::ShaderStageFlagBits::eVertex, m_shaderModules["trimesh.vert"]));
+          vk::ShaderStageFlagBits::eVertex,
+          m_shaderModules["basic_normalcolor_mesh.vert"]));
   pipelineBuilder.shaderStages.push_back(
       PipelineBuilder::default_pipeline_shader_stage_create_info(
           vk::ShaderStageFlagBits::eFragment,
-          m_shaderModules["fancytri.frag"]));
+          m_shaderModules["basic_flat_mesh.frag"]));
   pipelineBuilder.pipelineLayout = m_meshPipelineLayout;
   pipelineBuilder.depthStencil =
       PipelineBuilder::default_depth_stencil_create_info(
