@@ -41,6 +41,7 @@ void VulkanEngine::init() {
   init_sync_structures();
   load_meshes();
   init_shader_modules();
+  init_descriptors();
   init_pipelines();
   init_scene();
 
@@ -94,9 +95,12 @@ void VulkanEngine::init_vulkan() {
 
   m_device = vkbDevice.device;
   m_physicalDevice = vkbDevice.physical_device;
+  m_gpuProperties = vkbDevice.physical_device.properties;
 
   spdlog::info("Initialized physical device: {}",
                m_physicalDevice.getProperties().deviceName);
+  spdlog::info("With minimum buffer alignment of {}",
+               m_gpuProperties.limits.minUniformBufferOffsetAlignment);
 
   m_graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
   m_graphicsQueueFamily =
@@ -178,18 +182,22 @@ void VulkanEngine::init_commands() {
   commandPoolCreateFlags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
   vk::CommandPoolCreateInfo commandPoolCreateInfo(commandPoolCreateFlags,
                                                   m_graphicsQueueFamily);
-  m_commandPool = m_device.createCommandPool(commandPoolCreateInfo);
 
-  m_mainDeletionQueue.push_function(
-      [=]() { m_device.destroyCommandPool(m_commandPool); });
+  for (FrameData &frame : m_frames) {
+    frame.m_commandPool = m_device.createCommandPool(commandPoolCreateInfo);
 
-  vk::CommandBufferAllocateInfo commandBufferAllocateInfo(
-      m_commandPool, VULKAN_HPP_NAMESPACE::CommandBufferLevel::ePrimary, 1);
-  m_mainCommandBuffer =
-      m_device.allocateCommandBuffers(commandBufferAllocateInfo)[0];
+    m_mainDeletionQueue.push_function(
+        [=]() { m_device.destroyCommandPool(frame.m_commandPool); });
 
-  spdlog::info("Allocated {} command buffers",
-               commandBufferAllocateInfo.commandBufferCount);
+    vk::CommandBufferAllocateInfo commandBufferAllocateInfo(
+        frame.m_commandPool, VULKAN_HPP_NAMESPACE::CommandBufferLevel::ePrimary,
+        1);
+    frame.m_mainCommandBuffer =
+        m_device.allocateCommandBuffers(commandBufferAllocateInfo)[0];
+
+    spdlog::info("Allocated {} command buffers",
+                 commandBufferAllocateInfo.commandBufferCount);
+  }
 }
 
 void VulkanEngine::init_default_renderpass() {
@@ -283,19 +291,82 @@ void VulkanEngine::init_sync_structures() {
   vk::FenceCreateInfo fenceCreateInfo;
   // create so that the fence is default signaled
   fenceCreateInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
-  m_renderFence = m_device.createFence(fenceCreateInfo);
 
-  m_mainDeletionQueue.push_function(
-      [=]() { m_device.destroyFence(m_renderFence); });
+  for (FrameData &frame : m_frames) {
+    frame.m_renderFence = m_device.createFence(fenceCreateInfo);
 
-  vk::SemaphoreCreateInfo semaphoreCreateInfo;
-  m_presentSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
-  m_renderSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
+    m_mainDeletionQueue.push_function(
+        [=]() { m_device.destroyFence(frame.m_renderFence); });
 
-  m_mainDeletionQueue.push_function([=]() {
-    m_device.destroySemaphore(m_renderSemaphore);
-    m_device.destroySemaphore(m_presentSemaphore);
+    vk::SemaphoreCreateInfo semaphoreCreateInfo;
+    frame.m_presentSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
+    frame.m_renderSemaphore = m_device.createSemaphore(semaphoreCreateInfo);
+
+    m_mainDeletionQueue.push_function([=]() {
+      m_device.destroySemaphore(frame.m_renderSemaphore);
+      m_device.destroySemaphore(frame.m_presentSemaphore);
+    });
+  }
+}
+
+void VulkanEngine::init_descriptors() {
+  // descriptor pool that holds 10 uniforms
+  std::vector<vk::DescriptorPoolSize> sizes = {
+      {vk::DescriptorType::eUniformBuffer, 10}};
+
+  vk::DescriptorPoolCreateInfo poolInfo;
+  poolInfo.setMaxSets(10);
+  poolInfo.setPoolSizes(sizes);
+
+  m_descriptorPool = m_device.createDescriptorPool(poolInfo, nullptr);
+
+  vk::DescriptorSetLayoutBinding camBufferBinding;
+  camBufferBinding.setBinding(0);
+  camBufferBinding.setDescriptorCount(1);
+  camBufferBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
+  camBufferBinding.setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
+  vk::DescriptorSetLayoutCreateInfo setInfo;
+  setInfo.setBindings(camBufferBinding);
+  m_globalSetLayout = m_device.createDescriptorSetLayout(setInfo, nullptr);
+
+  m_mainDeletionQueue.push_function([&]() {
+    m_device.destroyDescriptorSetLayout(m_globalSetLayout);
+    m_device.destroyDescriptorPool(m_descriptorPool);
   });
+
+  // allocate and build the actual camera buffers
+  for (FrameData &frame : m_frames) {
+    frame.cameraBuffer = create_buffer(sizeof(GPUCameraData),
+                                       vk::BufferUsageFlagBits::eUniformBuffer,
+                                       vma::MemoryUsage::eCpuToGpu);
+
+    // allocate descriptor set
+    vk::DescriptorSetAllocateInfo allocInfo;
+    allocInfo.setDescriptorPool(m_descriptorPool);
+    allocInfo.setSetLayouts(m_globalSetLayout);
+    frame.globalDescriptor = m_device.allocateDescriptorSets(allocInfo)[0];
+
+    // point it to camera buffer
+    vk::DescriptorBufferInfo binfo;
+    binfo.setBuffer(frame.cameraBuffer.buffer);
+    binfo.setOffset(0);
+    binfo.setRange(sizeof(GPUCameraData));
+
+    // write to binding 0
+    vk::WriteDescriptorSet setWrite;
+    setWrite.setDstBinding(0);
+    setWrite.setDstSet(frame.globalDescriptor);
+    setWrite.setDescriptorCount(1);
+    setWrite.setDescriptorType(vk::DescriptorType::eUniformBuffer);
+    setWrite.setBufferInfo(binfo);
+    m_device.updateDescriptorSets(1, &setWrite, 0, nullptr);
+
+    m_mainDeletionQueue.push_function([&]() {
+      m_allocator.destroyBuffer(frame.cameraBuffer.buffer,
+                                frame.cameraBuffer.allocation);
+    });
+  }
 }
 
 void VulkanEngine::init_pipelines() {
@@ -331,11 +402,15 @@ void VulkanEngine::init_pipelines() {
 
   vk::PipelineLayoutCreateInfo meshPipelineLayoutInfo =
       PipelineBuilder::default_pipeline_layout_create_info();
+  // push constant setup
   vk::PushConstantRange pushConstant;
   pushConstant.setSize(sizeof(MeshPushConstants))
       .setOffset(0)
       .setStageFlags(vk::ShaderStageFlagBits::eVertex);
   meshPipelineLayoutInfo.setPushConstantRanges(pushConstant);
+  // setup global descriptor set layout
+  meshPipelineLayoutInfo.setSetLayouts(m_globalSetLayout);
+
   m_meshPipelineLayout = m_device.createPipelineLayout(meshPipelineLayoutInfo);
 
   pipelineBuilder.shaderStages.clear();
@@ -367,4 +442,23 @@ void VulkanEngine::init_pipelines() {
   spdlog::info("Finished building mesh triangle pipeline");
 }
 
+// TODO: move this to a utils section later
+AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize,
+                                            vk::BufferUsageFlags usage,
+                                            vma::MemoryUsage memoryUsage) {
+  vk::BufferCreateInfo bufferInfo;
+  bufferInfo.setSize(allocSize);
+  bufferInfo.setUsage(usage);
+
+  vma::AllocationCreateInfo vmaallocInfo;
+  vmaallocInfo.setUsage(memoryUsage);
+
+  AllocatedBuffer newBuffer;
+
+  auto allocated = m_allocator.createBuffer(bufferInfo, vmaallocInfo);
+  newBuffer.buffer = allocated.first;
+  newBuffer.allocation = allocated.second;
+
+  return newBuffer;
+}
 } // namespace vkr

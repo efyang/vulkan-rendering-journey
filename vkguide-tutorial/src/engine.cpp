@@ -52,7 +52,10 @@ void VulkanEngine::cleanup() {
   }
 
   // wait for gpu idle
-  (void)m_device.waitForFences(m_renderFence, true, S_TO_NS);
+  for (FrameData& frame: m_frames) {
+    (void)m_device.waitForFences(frame.m_renderFence, true,
+                                S_TO_NS);
+  }
 
   m_mainDeletionQueue.flush();
 

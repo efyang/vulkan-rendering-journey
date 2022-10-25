@@ -16,8 +16,13 @@ void VulkanEngine::init_scene() {
   monkey.mesh = get_mesh("monkey");
   monkey.material = get_material("defaultmesh");
   monkey.transformMatrix = glm::mat4(1.0f);
-
   m_renderables.push_back(monkey);
+
+  RenderObject bunny;
+  bunny.mesh = get_mesh("bunny");
+  bunny.material = get_material("defaultmesh");
+  bunny.transformMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(5, 0, 0));
+  m_renderables.push_back(bunny);
 
   for (int x = -20; x <= 20; x++) {
     for (int y = -20; y <= 20; y++) {

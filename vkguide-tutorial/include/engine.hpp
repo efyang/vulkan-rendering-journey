@@ -17,8 +17,26 @@
 #include <vulkan/vulkan.hpp>
 
 #include "mesh.hpp"
+#include "types.hpp"
 
 namespace vkr {
+
+struct GPUCameraData {
+  glm::mat4 view;
+  glm::mat4 proj;
+  glm::mat4 viewproj;
+};
+
+struct FrameData {
+  vk::Semaphore m_presentSemaphore, m_renderSemaphore;
+  vk::Fence m_renderFence;
+
+  vk::CommandPool m_commandPool;
+  vk::CommandBuffer m_mainCommandBuffer;
+
+  AllocatedBuffer cameraBuffer;
+  vk::DescriptorSet globalDescriptor;
+};
 
 struct Material {
   VkPipeline pipeline;
@@ -52,6 +70,8 @@ struct Inputs {
   std::set<SDL_Scancode> keyPressed;
 };
 
+constexpr unsigned int FRAME_OVERLAP = 3;
+
 class VulkanEngine {
 public:
   VulkanEngine();
@@ -73,6 +93,7 @@ private:
   vk::PhysicalDevice m_physicalDevice;
   vk::Device m_device;
   vk::SurfaceKHR m_surface;
+  vk::PhysicalDeviceProperties m_gpuProperties;
   void init_vulkan();
 
   vk::SwapchainKHR m_swapchain;
@@ -84,18 +105,24 @@ private:
   vk::Queue m_graphicsQueue;
   uint32_t m_graphicsQueueFamily;
 
-  vk::CommandPool m_commandPool;
-  vk::CommandBuffer m_mainCommandBuffer;
+  FrameData m_frames[FRAME_OVERLAP];
+  // frame that is currently being rendered
+  const FrameData &get_current_frame();
+
   void init_commands();
+  void init_sync_structures();
+
+  AllocatedBuffer create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
+                                vma::MemoryUsage memoryUsage);
+
+  vk::DescriptorSetLayout m_globalSetLayout;
+  vk::DescriptorPool m_descriptorPool;
+  void init_descriptors();
 
   vk::RenderPass m_renderPass;
   std::vector<vk::Framebuffer> m_framebuffers;
   void init_default_renderpass();
   void init_framebuffers();
-
-  vk::Semaphore m_presentSemaphore, m_renderSemaphore;
-  vk::Fence m_renderFence;
-  void init_sync_structures();
 
   std::optional<vk::ShaderModule> load_shader_module(const char *filePath);
   std::unordered_map<std::string, std::string> m_shaderFiles;
@@ -112,7 +139,6 @@ private:
   vk::ImageView m_depthImageView;
   AllocatedImage m_depthImage;
   vk::Format m_depthFormat;
-
   std::vector<RenderObject> m_renderables;
   std::unordered_map<std::string, Material> m_materials;
   std::unordered_map<std::string, Mesh> m_meshes;
@@ -123,8 +149,8 @@ private:
   void draw_objects(vk::CommandBuffer cmd, RenderObject *first, int count);
 
   Mesh m_triangleMesh;
-  Mesh m_monkeyMesh;
   void load_meshes();
+  void load_obj_mesh(const std::string &path, const std::string &name);
   void upload_mesh(Mesh &mesh);
 
   void init_scene();

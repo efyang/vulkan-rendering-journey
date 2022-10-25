@@ -7,28 +7,34 @@
 
 #include <algorithm>
 #include <vector>
+#include <vulkan/vulkan_enums.hpp>
 
 #include "constants.h"
 #include "engine.hpp"
 
 namespace vkr {
 
+const FrameData &VulkanEngine::get_current_frame() {
+  return m_frames[m_frameNumber % FRAME_OVERLAP];
+}
+
 void VulkanEngine::draw() {
   // timeout in ns
-  (void)m_device.waitForFences(m_renderFence, true, S_TO_NS);
-  m_device.resetFences(m_renderFence);
+  (void)m_device.waitForFences(get_current_frame().m_renderFence, true,
+                               S_TO_NS);
+  m_device.resetFences(get_current_frame().m_renderFence);
 
   // request swapchain image
   uint32_t swapchainImageIndex =
       m_device
-          .acquireNextImageKHR(m_swapchain, S_TO_NS, m_presentSemaphore,
-                               nullptr)
+          .acquireNextImageKHR(m_swapchain, S_TO_NS,
+                               get_current_frame().m_presentSemaphore, nullptr)
           .value;
 
-  m_mainCommandBuffer.reset();
+  get_current_frame().m_mainCommandBuffer.reset();
   vk::CommandBufferBeginInfo cmdBeginInfo;
   cmdBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-  m_mainCommandBuffer.begin(cmdBeginInfo);
+  get_current_frame().m_mainCommandBuffer.begin(cmdBeginInfo);
 
   // populate the buffer
 
@@ -49,28 +55,30 @@ void VulkanEngine::draw() {
 
   auto clearValues = {clearValue, depthClear};
   rpInfo.setClearValues(clearValues);
-  m_mainCommandBuffer.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+  get_current_frame().m_mainCommandBuffer.beginRenderPass(
+      rpInfo, vk::SubpassContents::eInline);
 
-  draw_objects(m_mainCommandBuffer, m_renderables.data(), m_renderables.size());
+  draw_objects(get_current_frame().m_mainCommandBuffer, m_renderables.data(),
+               m_renderables.size());
 
   // finish populating the buffer
-  m_mainCommandBuffer.endRenderPass();
-  m_mainCommandBuffer.end();
+  get_current_frame().m_mainCommandBuffer.endRenderPass();
+  get_current_frame().m_mainCommandBuffer.end();
 
   vk::SubmitInfo submitInfo;
-  submitInfo.setWaitSemaphores(m_presentSemaphore);
-  submitInfo.setSignalSemaphores(m_renderSemaphore);
-  submitInfo.setCommandBuffers(m_mainCommandBuffer);
+  submitInfo.setWaitSemaphores(get_current_frame().m_presentSemaphore);
+  submitInfo.setSignalSemaphores(get_current_frame().m_renderSemaphore);
+  submitInfo.setCommandBuffers(get_current_frame().m_mainCommandBuffer);
   // TODO: wtf?
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
   submitInfo.setWaitDstStageMask(waitStage);
-  m_graphicsQueue.submit(submitInfo, m_renderFence);
+  m_graphicsQueue.submit(submitInfo, get_current_frame().m_renderFence);
 
   // now present to surface
   vk::PresentInfoKHR presentInfo;
   presentInfo.setSwapchains(m_swapchain);
-  presentInfo.setWaitSemaphores(m_renderSemaphore);
+  presentInfo.setWaitSemaphores(get_current_frame().m_renderSemaphore);
   presentInfo.setImageIndices(swapchainImageIndex);
   (void)m_graphicsQueue.presentKHR(presentInfo);
 
@@ -86,6 +94,17 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
       glm::perspective(glm::radians(70.), 1700. / 900., 0.1, 200.);
   // TODO: why?
   projection[1][1] *= -1;
+
+  // fill GPU camera data struct
+  GPUCameraData camData;
+  camData.proj = projection;
+  camData.view = m_viewMatrix;
+  camData.viewproj = projection * m_viewMatrix;
+
+  void *data =
+      m_allocator.mapMemory(get_current_frame().cameraBuffer.allocation);
+  memcpy(data, &camData, sizeof(GPUCameraData));
+  m_allocator.unmapMemory(get_current_frame().cameraBuffer.allocation);
 
   // sort renderobjects by material
   std::vector<RenderObject> sortedRenderObjects;
@@ -106,13 +125,14 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
       cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
                        object.material->pipeline);
       lastMaterial = object.material;
+      // bind descriptor set when changing pipeline
+      cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                             object.material->pipelineLayout, 0, 1,
+                             &get_current_frame().globalDescriptor, 0, nullptr);
     }
 
-    glm::mat4 model = object.transformMatrix;
-    glm::mat4 mesh_matrix = projection * m_viewMatrix * model;
-
     MeshPushConstants constants;
-    constants.render_matrix = mesh_matrix;
+    constants.render_matrix = object.transformMatrix;
     // upload mesh via push constants
     cmd.pushConstants(object.material->pipelineLayout,
                       vk::ShaderStageFlagBits::eVertex, 0,
