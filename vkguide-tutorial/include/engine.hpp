@@ -21,10 +21,24 @@
 
 namespace vkr {
 
+// TODO: turn this into a GPU data section?
 struct GPUCameraData {
   glm::mat4 view;
   glm::mat4 proj;
   glm::mat4 viewproj;
+};
+
+struct GPUSceneData {
+  // stick to vec4 and mat4, avoid mixing dtypes, still need to pad
+  glm::vec4 fogColor;     // w is for exponent
+  glm::vec4 fogDistances; // x min y max, zw unused
+  glm::vec4 ambientColor;
+  glm::vec4 sunlightDirection; // w for sun power
+  glm::vec4 sunlightColor;
+};
+
+struct GPUObjectData {
+  glm::mat4 modelMatrix;
 };
 
 struct FrameData {
@@ -36,6 +50,10 @@ struct FrameData {
 
   AllocatedBuffer cameraBuffer;
   vk::DescriptorSet globalDescriptor;
+
+  // ssbo of object data
+  AllocatedBuffer objectBuffer;
+  vk::DescriptorSet objectDescriptor;
 };
 
 struct Material {
@@ -116,7 +134,9 @@ private:
                                 vma::MemoryUsage memoryUsage);
 
   vk::DescriptorSetLayout m_globalSetLayout;
+  vk::DescriptorSetLayout m_objectSetLayout;
   vk::DescriptorPool m_descriptorPool;
+  size_t pad_uniform_buffer_size(size_t originalSize);
   void init_descriptors();
 
   vk::RenderPass m_renderPass;
@@ -156,6 +176,8 @@ private:
   void init_scene();
 
   glm::mat4 m_viewMatrix;
+  GPUSceneData m_sceneParameters;
+  AllocatedBuffer m_sceneParameterBuffer;
 
   Inputs m_inputs;
   void input_handle_keydown(SDL_Scancode &key);

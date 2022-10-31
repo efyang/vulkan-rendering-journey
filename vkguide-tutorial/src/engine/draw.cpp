@@ -101,10 +101,24 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
   camData.view = m_viewMatrix;
   camData.viewproj = projection * m_viewMatrix;
 
+  // setup sceneData
+  float framed = m_frameNumber / 288.;
+  m_sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
+  char *sceneData;
+  sceneData = (char *)m_allocator.mapMemory(m_sceneParameterBuffer.allocation);
+  int frameIndex = m_frameNumber % FRAME_OVERLAP;
+  sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
+  memcpy(sceneData, &m_sceneParameters, sizeof(GPUSceneData));
+  m_allocator.unmapMemory(m_sceneParameterBuffer.allocation);
+
   void *data =
       m_allocator.mapMemory(get_current_frame().cameraBuffer.allocation);
   memcpy(data, &camData, sizeof(GPUCameraData));
   m_allocator.unmapMemory(get_current_frame().cameraBuffer.allocation);
+
+  void *objectData =
+      m_allocator.mapMemory((get_current_frame().objectBuffer.allocation));
+  GPUObjectData *objectSSBO = (GPUObjectData *)objectData;
 
   // sort renderobjects by material
   std::vector<RenderObject> sortedRenderObjects;
@@ -126,9 +140,14 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
                        object.material->pipeline);
       lastMaterial = object.material;
       // bind descriptor set when changing pipeline
+      uint32_t uniformOffset =
+          pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
+      cmd.bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, object.material->pipelineLayout, 0,
+          1, &get_current_frame().globalDescriptor, 1, &uniformOffset);
       cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                             object.material->pipelineLayout, 0, 1,
-                             &get_current_frame().globalDescriptor, 0, nullptr);
+                             object.material->pipelineLayout, 1, 1,
+                             &get_current_frame().objectDescriptor, 0, nullptr);
     }
 
     MeshPushConstants constants;
@@ -138,13 +157,17 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
                       vk::ShaderStageFlagBits::eVertex, 0,
                       sizeof(MeshPushConstants), &constants);
 
+    objectSSBO[i].modelMatrix = object.transformMatrix;
+
     if (object.mesh != lastMesh) {
       vk::DeviceSize offset = 0;
       cmd.bindVertexBuffers(0, object.mesh->vertexBuffer.buffer, offset);
       lastMesh = object.mesh;
     }
 
-    cmd.draw(object.mesh->vertices.size(), 1, 0, 0);
+    cmd.draw(object.mesh->vertices.size(), 1, 0, i);
   }
+
+  m_allocator.unmapMemory(get_current_frame().objectBuffer.allocation);
 }
 } // namespace vkr
