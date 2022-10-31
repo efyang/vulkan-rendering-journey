@@ -180,6 +180,20 @@ void VulkanEngine::init_swapchain() {
 }
 
 void VulkanEngine::init_commands() {
+  // create upload command pool
+  vk::CommandPoolCreateFlags uploadCommandPoolCreateFlags;
+  vk::CommandPoolCreateInfo uploadCommandPoolInfo(uploadCommandPoolCreateFlags,
+                                                  m_graphicsQueueFamily);
+  m_uploadContext.commandPool =
+      m_device.createCommandPool(uploadCommandPoolInfo);
+  m_mainDeletionQueue.push_function(
+      [&] { m_device.destroyCommandPool(m_uploadContext.commandPool); });
+
+  vk::CommandBufferAllocateInfo instantCommandBufferAllocateInfo(
+      m_uploadContext.commandPool, vk::CommandBufferLevel::ePrimary, 1);
+  m_uploadContext.commandBuffer =
+      m_device.allocateCommandBuffers(instantCommandBufferAllocateInfo)[0];
+
   vk::CommandPoolCreateFlags commandPoolCreateFlags;
   // allow resetting individual command buffers
   commandPoolCreateFlags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
@@ -193,8 +207,7 @@ void VulkanEngine::init_commands() {
         [=]() { m_device.destroyCommandPool(frame.m_commandPool); });
 
     vk::CommandBufferAllocateInfo commandBufferAllocateInfo(
-        frame.m_commandPool, VULKAN_HPP_NAMESPACE::CommandBufferLevel::ePrimary,
-        1);
+        frame.m_commandPool, vk::CommandBufferLevel::ePrimary, 1);
     frame.m_mainCommandBuffer =
         m_device.allocateCommandBuffers(commandBufferAllocateInfo)[0];
 
@@ -291,9 +304,15 @@ void VulkanEngine::init_framebuffers() {
 }
 
 void VulkanEngine::init_sync_structures() {
-  vk::FenceCreateInfo fenceCreateInfo;
   // create so that the fence is default signaled
+  vk::FenceCreateInfo fenceCreateInfo;
   fenceCreateInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
+
+  vk::FenceCreateInfo uploadFenceCreateInfo;
+  m_uploadContext.uploadFence = m_device.createFence(uploadFenceCreateInfo);
+
+  m_mainDeletionQueue.push_function(
+      [=]() { m_device.destroyFence(m_uploadContext.uploadFence); });
 
   for (FrameData &frame : m_frames) {
     frame.m_renderFence = m_device.createFence(fenceCreateInfo);

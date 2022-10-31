@@ -1,7 +1,7 @@
-#include "common_includes.h"
-
-#include "engine.hpp"
 #include "mesh.hpp"
+#include "common_includes.h"
+#include "constants.h"
+#include "engine.hpp"
 
 #include <iostream>
 #include <string>
@@ -41,23 +41,52 @@ void VulkanEngine::load_meshes() {
 }
 
 void VulkanEngine::upload_mesh(Mesh &mesh) {
-  // let the VMA library know that this data should be writeable by CPU, but
-  // also readable by GPU
   size_t vertexBufferSize = mesh.vertices.size() * sizeof(Vertex);
-  mesh.vertexBuffer =
-      create_buffer(vertexBufferSize, vk::BufferUsageFlagBits::eVertexBuffer,
-                    vma::MemoryUsage::eCpuToGpu);
+  AllocatedBuffer stagingBuffer =
+      create_buffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                    vma::MemoryUsage::eCpuOnly);
+  void *data = m_allocator.mapMemory(stagingBuffer.allocation);
+  std::memcpy(data, mesh.vertices.data(), vertexBufferSize);
+  m_allocator.unmapMemory(stagingBuffer.allocation);
 
-  m_mainDeletionQueue.push_function([=]() {
+  mesh.vertexBuffer = create_buffer(vertexBufferSize,
+                                    vk::BufferUsageFlagBits::eVertexBuffer |
+                                        vk::BufferUsageFlagBits::eTransferDst,
+                                    vma::MemoryUsage::eGpuOnly);
+
+  immediate_submit([&](vk::CommandBuffer cmd) {
+    vk::BufferCopy copy(0, 0, vertexBufferSize);
+    cmd.copyBuffer(stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &copy);
+  });
+
+  m_mainDeletionQueue.push_function([&]() {
     m_allocator.destroyBuffer(mesh.vertexBuffer.buffer,
                               mesh.vertexBuffer.allocation);
   });
-
-  void *data = m_allocator.mapMemory(mesh.vertexBuffer.allocation);
-  std::memcpy(data, mesh.vertices.data(), vertexBufferSize);
-  m_allocator.unmapMemory(mesh.vertexBuffer.allocation);
+  m_allocator.destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
 
   spdlog::info("Uploaded mesh of size {}", vertexBufferSize);
+}
+
+void VulkanEngine::immediate_submit(
+    std::function<void(vk::CommandBuffer cmd)> &&function) {
+  vk::CommandBuffer cmd = m_uploadContext.commandBuffer;
+
+  vk::CommandBufferBeginInfo cmdBeginInfo(
+      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+
+  cmd.begin(cmdBeginInfo);
+  function(cmd);
+  cmd.end();
+
+  vk::SubmitInfo submit;
+  submit.setCommandBuffers(cmd);
+  m_graphicsQueue.submit(submit, m_uploadContext.uploadFence);
+
+  (void)m_device.waitForFences(m_uploadContext.uploadFence, true, S_TO_NS);
+  m_device.resetFences(m_uploadContext.uploadFence);
+
+  m_device.resetCommandPool(m_uploadContext.commandPool);
 }
 
 // Materials and meshes

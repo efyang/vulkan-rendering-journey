@@ -95,6 +95,12 @@ struct Inputs {
   std::set<SDL_Scancode> keyPressed;
 };
 
+struct UploadContext {
+  vk::Fence uploadFence;
+  vk::CommandPool commandPool;
+  vk::CommandBuffer commandBuffer;
+};
+
 constexpr unsigned int FRAME_OVERLAP = 3;
 
 class VulkanEngine {
@@ -130,6 +136,7 @@ private:
   vk::Queue m_graphicsQueue;
   uint32_t m_graphicsQueueFamily;
 
+  // framebuffers
   FrameData m_frames[FRAME_OVERLAP];
   // frame that is currently being rendered
   const FrameData &get_current_frame();
@@ -137,16 +144,17 @@ private:
   void init_commands();
   void init_sync_structures();
 
+  // descriptors
+  // #utility
   AllocatedBuffer create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
                                 vma::MemoryUsage memoryUsage);
-
+  // #utility
+  size_t pad_uniform_buffer_size(size_t originalSize);
   vk::DescriptorPool m_descriptorPool;
   vk::DescriptorSetLayout m_globalSetLayout;
   vk::DescriptorSetLayout m_objectSetLayout;
   AllocatedBuffer m_cameraSceneBuffer;
   vk::DescriptorSet m_globalDescriptorSet;
-
-  size_t pad_uniform_buffer_size(size_t originalSize);
   void init_descriptors();
 
   vk::RenderPass m_renderPass;
@@ -154,21 +162,27 @@ private:
   void init_default_renderpass();
   void init_framebuffers();
 
+  // shader modules
   std::optional<vk::ShaderModule> load_shader_module(const char *filePath);
   std::unordered_map<std::string, std::string> m_shaderFiles;
   std::unordered_map<std::string, vk::ShaderModule> m_shaderModules;
   void init_shader_modules();
-  void init_pipelines();
 
+  // memory related
   vma::Allocator m_allocator;
   DeletionQueue m_mainDeletionQueue;
 
+  // pipelines
   vk::PipelineLayout m_meshPipelineLayout;
   vk::Pipeline m_meshPipeline;
+  void init_pipelines();
 
+  // depth image
   vk::ImageView m_depthImageView;
   AllocatedImage m_depthImage;
   vk::Format m_depthFormat;
+
+  // objects and meshes
   std::vector<RenderObject> m_renderables;
   std::unordered_map<std::string, Material> m_materials;
   std::unordered_map<std::string, Mesh> m_meshes;
@@ -177,17 +191,21 @@ private:
   Material *get_material(const std::string &name);
   Mesh *get_mesh(const std::string &name);
   void draw_objects(vk::CommandBuffer cmd, RenderObject *first, int count);
-
   Mesh m_triangleMesh;
+  UploadContext m_uploadContext;
+  // #utility
+  // instantly submit commands to cmd
+  void immediate_submit(std::function<void(vk::CommandBuffer cmd)> &&function);
   void load_meshes();
   void load_obj_mesh(const std::string &path, const std::string &name);
   void upload_mesh(Mesh &mesh);
 
+  // scene
   void init_scene();
-
   glm::mat4 m_viewMatrix;
   GPUSceneData m_sceneParameters;
 
+  // input
   Inputs m_inputs;
   void input_handle_keydown(SDL_Scancode &key);
   void input_handle_keyup(SDL_Scancode &key);
