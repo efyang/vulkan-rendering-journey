@@ -102,23 +102,25 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
   camData.viewproj = projection * m_viewMatrix;
 
   // setup sceneData
+  int frameIndex = m_frameNumber % FRAME_OVERLAP;
   float framed = m_frameNumber / 288.;
   m_sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
-  char *sceneData;
-  sceneData = (char *)m_allocator.mapMemory(m_sceneParameterBuffer.allocation);
-  int frameIndex = m_frameNumber % FRAME_OVERLAP;
-  sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-  memcpy(sceneData, &m_sceneParameters, sizeof(GPUSceneData));
-  m_allocator.unmapMemory(m_sceneParameterBuffer.allocation);
 
-  void *data =
-      m_allocator.mapMemory(get_current_frame().cameraBuffer.allocation);
-  memcpy(data, &camData, sizeof(GPUCameraData));
-  m_allocator.unmapMemory(get_current_frame().cameraBuffer.allocation);
+  char *data = (char *)m_allocator.mapMemory(m_cameraSceneBuffer.allocation);
+  data += pad_uniform_buffer_size(sizeof(GPUCameraSceneData)) * frameIndex;
+  memcpy(data + offsetof(GPUCameraSceneData, cameraData), &camData,
+         sizeof(GPUCameraData));
+  memcpy(data + offsetof(GPUCameraSceneData, sceneData), &m_sceneParameters,
+         sizeof(GPUSceneData));
+  m_allocator.unmapMemory(m_cameraSceneBuffer.allocation);
 
   void *objectData =
       m_allocator.mapMemory((get_current_frame().objectBuffer.allocation));
   GPUObjectData *objectSSBO = (GPUObjectData *)objectData;
+  void *objectLightingData = m_allocator.mapMemory(
+      (get_current_frame().objectLightingBuffer.allocation));
+  GPUObjectLightingData *objectLightingSSBO =
+      (GPUObjectLightingData *)objectLightingData;
 
   // sort renderobjects by material
   std::vector<RenderObject> sortedRenderObjects;
@@ -141,13 +143,14 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
       lastMaterial = object.material;
       // bind descriptor set when changing pipeline
       uint32_t uniformOffset =
-          pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
-      cmd.bindDescriptorSets(
-          vk::PipelineBindPoint::eGraphics, object.material->pipelineLayout, 0,
-          1, &get_current_frame().globalDescriptor, 1, &uniformOffset);
+          pad_uniform_buffer_size(sizeof(GPUCameraSceneData)) * frameIndex;
+      uint32_t dOffset[] = {uniformOffset, uniformOffset};
       cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                             object.material->pipelineLayout, 1, 1,
-                             &get_current_frame().objectDescriptor, 0, nullptr);
+                             object.material->pipelineLayout, 0, 1,
+                             &m_globalDescriptorSet, 2, dOffset);
+      cmd.bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, object.material->pipelineLayout, 1,
+          1, &get_current_frame().objectDescriptorSet, 0, nullptr);
     }
 
     MeshPushConstants constants;
@@ -158,6 +161,8 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
                       sizeof(MeshPushConstants), &constants);
 
     objectSSBO[i].modelMatrix = object.transformMatrix;
+    objectLightingSSBO[i].objectAmbientLighting =
+        glm::vec4(i % 3 == 0, i % 3 == 1, i % 3 == 2, 1);
 
     if (object.mesh != lastMesh) {
       vk::DeviceSize offset = 0;
@@ -169,5 +174,6 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
   }
 
   m_allocator.unmapMemory(get_current_frame().objectBuffer.allocation);
+  m_allocator.unmapMemory(get_current_frame().objectLightingBuffer.allocation);
 }
 } // namespace vkr

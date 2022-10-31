@@ -37,8 +37,17 @@ struct GPUSceneData {
   glm::vec4 sunlightColor;
 };
 
+struct GPUCameraSceneData {
+  struct GPUCameraData cameraData;
+  struct GPUSceneData sceneData;
+};
+
 struct GPUObjectData {
   glm::mat4 modelMatrix;
+};
+
+struct GPUObjectLightingData {
+  glm::vec4 objectAmbientLighting;
 };
 
 struct FrameData {
@@ -48,12 +57,10 @@ struct FrameData {
   vk::CommandPool m_commandPool;
   vk::CommandBuffer m_mainCommandBuffer;
 
-  AllocatedBuffer cameraBuffer;
-  vk::DescriptorSet globalDescriptor;
-
   // ssbo of object data
   AllocatedBuffer objectBuffer;
-  vk::DescriptorSet objectDescriptor;
+  AllocatedBuffer objectLightingBuffer;
+  vk::DescriptorSet objectDescriptorSet;
 };
 
 struct Material {
@@ -133,9 +140,12 @@ private:
   AllocatedBuffer create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
                                 vma::MemoryUsage memoryUsage);
 
+  vk::DescriptorPool m_descriptorPool;
   vk::DescriptorSetLayout m_globalSetLayout;
   vk::DescriptorSetLayout m_objectSetLayout;
-  vk::DescriptorPool m_descriptorPool;
+  AllocatedBuffer m_cameraSceneBuffer;
+  vk::DescriptorSet m_globalDescriptorSet;
+
   size_t pad_uniform_buffer_size(size_t originalSize);
   void init_descriptors();
 
@@ -177,7 +187,6 @@ private:
 
   glm::mat4 m_viewMatrix;
   GPUSceneData m_sceneParameters;
-  AllocatedBuffer m_sceneParameterBuffer;
 
   Inputs m_inputs;
   void input_handle_keydown(SDL_Scancode &key);

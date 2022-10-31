@@ -1,5 +1,4 @@
-//glsl version 4.5
-#version 450
+#version 460
 
 layout (location = 0) in vec3 inColor;
 //output write
@@ -16,6 +15,5 @@ layout(set = 0, binding = 1) uniform SceneData {
 
 void main()
 {
-	//return red
 	outFragColor = vec4(inColor + sceneData.ambientColor.xyz, 1.0f);
 }

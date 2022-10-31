@@ -327,8 +327,8 @@ size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) {
 void VulkanEngine::init_descriptors() {
   // descriptor pool that holds 10 uniforms
   std::vector<vk::DescriptorPoolSize> sizes = {
-      {vk::DescriptorType::eUniformBuffer, 10},
       {vk::DescriptorType::eUniformBufferDynamic, 10},
+      {vk::DescriptorType::eStorageBuffer, 10},
       {vk::DescriptorType::eStorageBuffer, 10}};
 
   vk::DescriptorPoolCreateInfo poolInfo;
@@ -337,23 +337,11 @@ void VulkanEngine::init_descriptors() {
 
   m_descriptorPool = m_device.createDescriptorPool(poolInfo, nullptr);
 
-  // allocate scene parameter buffer
-  const size_t sceneParamBufferSize =
-      FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
-  m_sceneParameterBuffer = create_buffer(
-      sceneParamBufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-      vma::MemoryUsage::eCpuToGpu);
-
-  m_mainDeletionQueue.push_function([&]() {
-    m_allocator.destroyBuffer(m_sceneParameterBuffer.buffer,
-                              m_sceneParameterBuffer.allocation);
-  });
-
   // camera data at 0
   vk::DescriptorSetLayoutBinding camBufferBinding;
   camBufferBinding.setBinding(0);
   camBufferBinding.setDescriptorCount(1);
-  camBufferBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
+  camBufferBinding.setDescriptorType(vk::DescriptorType::eUniformBufferDynamic);
   camBufferBinding.setStageFlags(vk::ShaderStageFlagBits::eVertex);
   // scene data at 1
   vk::DescriptorSetLayoutBinding sceneBind(
@@ -366,13 +354,43 @@ void VulkanEngine::init_descriptors() {
   setInfo.setBindings(bindings);
   m_globalSetLayout = m_device.createDescriptorSetLayout(setInfo, nullptr);
 
+  // allocate global descriptor set
+  vk::DescriptorSetAllocateInfo allocInfo;
+  allocInfo.setDescriptorPool(m_descriptorPool);
+  allocInfo.setSetLayouts(m_globalSetLayout);
+  m_globalDescriptorSet = m_device.allocateDescriptorSets(allocInfo)[0];
+  // allocate camera scene buffer
+  uint32_t cameraSceneBufferSize =
+      FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUCameraSceneData));
+  m_cameraSceneBuffer = create_buffer(cameraSceneBufferSize,
+                                      vk::BufferUsageFlagBits::eUniformBuffer,
+                                      vma::MemoryUsage::eCpuToGpu);
+  m_mainDeletionQueue.push_function([&] {
+    m_allocator.destroyBuffer(m_cameraSceneBuffer.buffer,
+                              m_cameraSceneBuffer.allocation);
+  });
+
+  // point camera and scene buffers to the combined buffer
+  vk::DescriptorBufferInfo cameraInfo;
+  cameraInfo.setBuffer(m_cameraSceneBuffer.buffer);
+  cameraInfo.setOffset(offsetof(GPUCameraSceneData, cameraData));
+  cameraInfo.setRange(sizeof(GPUCameraData));
+  vk::DescriptorBufferInfo sceneInfo;
+  sceneInfo.setBuffer(m_cameraSceneBuffer.buffer);
+  sceneInfo.setOffset(offsetof(GPUCameraSceneData, sceneData));
+  sceneInfo.setRange(sizeof(GPUSceneData));
+
+  // per-object bindings
   vk::DescriptorSetLayoutBinding objectBind(
       0, vk::DescriptorType::eStorageBuffer, 1,
       vk::ShaderStageFlagBits::eVertex);
+  vk::DescriptorSetLayoutBinding objectLightingBind(
+      1, vk::DescriptorType::eStorageBuffer, 1,
+      vk::ShaderStageFlagBits::eVertex);
+  vk::DescriptorSetLayoutBinding objectBindings[] = {objectBind,
+                                                     objectLightingBind};
   vk::DescriptorSetLayoutCreateInfo objectSetInfo;
-  objectSetInfo.setBindingCount(1);
-  objectSetInfo.setBindings(objectBind);
-
+  objectSetInfo.setBindings(objectBindings);
   m_objectSetLayout = m_device.createDescriptorSetLayout(objectSetInfo);
 
   m_mainDeletionQueue.push_function([&]() {
@@ -381,18 +399,13 @@ void VulkanEngine::init_descriptors() {
     m_device.destroyDescriptorPool(m_descriptorPool);
   });
 
-  // allocate and build the actual camera buffers
   size_t i = 0;
   for (FrameData &frame : m_frames) {
     vk::DescriptorSetAllocateInfo objectSetAlloc;
     objectSetAlloc.setDescriptorPool(m_descriptorPool);
     objectSetAlloc.setSetLayouts(m_objectSetLayout);
-    frame.objectDescriptor = m_device.allocateDescriptorSets(objectSetAlloc)[0];
-
-    // allocate camera buffer
-    frame.cameraBuffer = create_buffer(sizeof(GPUCameraData),
-                                       vk::BufferUsageFlagBits::eUniformBuffer,
-                                       vma::MemoryUsage::eCpuToGpu);
+    frame.objectDescriptorSet =
+        m_device.allocateDescriptorSets(objectSetAlloc)[0];
 
     // allocate ssbo buffer for object data
     const int MAX_OBJECTS = 10000;
@@ -400,46 +413,42 @@ void VulkanEngine::init_descriptors() {
                                        vk::BufferUsageFlagBits::eStorageBuffer,
                                        vma::MemoryUsage::eCpuToGpu);
 
-    // allocate descriptor set
-    vk::DescriptorSetAllocateInfo allocInfo;
-    allocInfo.setDescriptorPool(m_descriptorPool);
-    allocInfo.setSetLayouts(m_globalSetLayout);
-    frame.globalDescriptor = m_device.allocateDescriptorSets(allocInfo)[0];
-
-    // point it to camera buffer
-    vk::DescriptorBufferInfo cameraInfo;
-    cameraInfo.setBuffer(frame.cameraBuffer.buffer);
-    cameraInfo.setOffset(0);
-    cameraInfo.setRange(sizeof(GPUCameraData));
-
-    vk::DescriptorBufferInfo sceneInfo;
-    sceneInfo.setBuffer(m_sceneParameterBuffer.buffer);
-    sceneInfo.setOffset(0);
-    sceneInfo.setRange(sizeof(GPUSceneData));
-
     vk::DescriptorBufferInfo objectInfo;
     objectInfo.setBuffer(frame.objectBuffer.buffer);
     objectInfo.setOffset(0);
     objectInfo.setRange(sizeof(GPUObjectData) * MAX_OBJECTS);
 
+    frame.objectLightingBuffer = create_buffer(
+        sizeof(GPUObjectLightingData) * MAX_OBJECTS,
+        vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
+    vk::DescriptorBufferInfo objectLightingInfo;
+    objectLightingInfo.setBuffer(frame.objectLightingBuffer.buffer);
+    objectLightingInfo.setOffset(0);
+    objectLightingInfo.setRange(sizeof(GPUObjectLightingData) * MAX_OBJECTS);
+
     // write to binding 0
-    vk::WriteDescriptorSet cameraWrite(frame.globalDescriptor, 0, 0, 1,
-                                       vk::DescriptorType::eUniformBuffer,
-                                       nullptr, &cameraInfo, nullptr);
-    vk::WriteDescriptorSet sceneWrite(frame.globalDescriptor, 1, 0, 1,
+    vk::WriteDescriptorSet cameraWrite(
+        m_globalDescriptorSet, 0, 0, 1,
+        vk::DescriptorType::eUniformBufferDynamic, nullptr, &cameraInfo,
+        nullptr);
+    vk::WriteDescriptorSet sceneWrite(m_globalDescriptorSet, 1, 0, 1,
                                       vk::DescriptorType::eUniformBufferDynamic,
                                       nullptr, &sceneInfo, nullptr);
-    vk::WriteDescriptorSet objectWrite(frame.objectDescriptor, 0, 0, 1,
+    vk::WriteDescriptorSet objectWrite(frame.objectDescriptorSet, 0, 0, 1,
                                        vk::DescriptorType::eStorageBuffer,
                                        nullptr, &objectInfo, nullptr);
-    vk::WriteDescriptorSet writes[] = {cameraWrite, sceneWrite, objectWrite};
-    m_device.updateDescriptorSets(3, writes, 0, nullptr);
+    vk::WriteDescriptorSet objectLightingWrite(
+        frame.objectDescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer,
+        nullptr, &objectLightingInfo, nullptr);
+    vk::WriteDescriptorSet writes[] = {cameraWrite, sceneWrite, objectWrite,
+                                       objectLightingWrite};
+    m_device.updateDescriptorSets(std::size(writes), writes, 0, nullptr);
 
     m_mainDeletionQueue.push_function([&]() {
-      m_allocator.destroyBuffer(frame.cameraBuffer.buffer,
-                                frame.cameraBuffer.allocation);
       m_allocator.destroyBuffer(frame.objectBuffer.buffer,
                                 frame.objectBuffer.allocation);
+      m_allocator.destroyBuffer(frame.objectLightingBuffer.buffer,
+                                frame.objectLightingBuffer.allocation);
     });
     i++;
   }
