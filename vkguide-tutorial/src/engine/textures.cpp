@@ -112,9 +112,8 @@ VulkanEngine::load_image_from_file(const std::string &path) {
 
 void VulkanEngine::load_images() {
   Texture lostEmpire;
-  lostEmpire.image = load_image_from_file(
-                         "thirdparty/vulkan-guide/assets/lost_empire-RGBA.png")
-                         .value();
+  lostEmpire.image =
+      load_image_from_file("assets/models/viking_room.png").value();
 
   vk::ImageViewCreateInfo imageViewCreate;
   imageViewCreate.setImage(lostEmpire.image.image);

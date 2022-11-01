@@ -64,6 +64,7 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
   }
 
   Mesh m;
+  glm::vec3 centroid = glm::vec3(0.);
   for (const auto &s : shapes) {
     for (const auto &idx : s.mesh.indices) {
       Vertex new_vert;
@@ -82,8 +83,15 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
         // vulkan specific
         new_vert.uv.y = 1 - uy;
       }
+      centroid += new_vert.position;
       m.vertices.push_back(new_vert);
     }
   }
+  // center the mesh
+  centroid /= (double)m.vertices.size();
+  for (auto &v : m.vertices) {
+    v.position -= centroid;
+  }
+
   return m;
 }

@@ -91,7 +91,7 @@ void VulkanEngine::draw() {
 void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
                                 int count) {
   glm::mat4 projection =
-      glm::perspective(glm::radians(70.), 1700. / 900., 0.1, 200.);
+      glm::perspective(glm::radians(70.), 1920. / 1080., 0.1, 200.);
   // TODO: why?
   projection[1][1] *= -1;
 

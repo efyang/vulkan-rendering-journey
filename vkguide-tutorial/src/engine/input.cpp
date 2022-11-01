@@ -24,6 +24,12 @@ void VulkanEngine::input_handle_keydown(SDL_Scancode &key) {
   case SDL_SCANCODE_D:
     translateCameraDirection = glm::vec3(-1., 0., 0.);
     break;
+  case SDL_SCANCODE_E:
+    translateCameraDirection = glm::vec3(0., -1., 0.);
+    break;
+  case SDL_SCANCODE_Q:
+    translateCameraDirection = glm::vec3(0., 1., 0.);
+    break;
   default:
     break;
   }
