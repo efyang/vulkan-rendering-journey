@@ -49,6 +49,7 @@ src = [
 	'src/engine/scene.cpp',
 	'src/engine/mesh.cpp',
 	'src/mesh.cpp',
+	'src/engine/textures.cpp',
 	'thirdparty/vk-bootstrap/src/VkBootstrap.cpp',
 	]
 

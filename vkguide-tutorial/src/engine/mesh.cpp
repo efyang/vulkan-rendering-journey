@@ -34,6 +34,7 @@ void VulkanEngine::load_meshes() {
 
   load_obj_mesh("thirdparty/vulkan-guide/assets/monkey_smooth.obj", "monkey");
   load_obj_mesh("thirdparty/OpenGL/Binaries/bunny.obj", "bunny");
+  load_obj_mesh("thirdparty/vulkan-guide/assets/lost_empire.obj", "empire");
 
   upload_mesh(m_triangleMesh);
   spdlog::info("Uploaded triangle mesh");

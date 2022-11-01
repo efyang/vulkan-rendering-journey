@@ -151,6 +151,11 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
       cmd.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, object.material->pipelineLayout, 1,
           1, &get_current_frame().objectDescriptorSet, 0, nullptr);
+      if (object.material->textureSet.has_value()) {
+        cmd.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics, object.material->pipelineLayout,
+            2, 1, &object.material->textureSet.value(), 0, nullptr);
+      }
     }
 
     MeshPushConstants constants;

@@ -39,10 +39,11 @@ void VulkanEngine::init() {
   init_default_renderpass();
   init_framebuffers();
   init_sync_structures();
-  load_meshes();
   init_shader_modules();
   init_descriptors();
   init_pipelines();
+  load_meshes();
+  load_images();
   init_scene();
 
   // everything went fine
@@ -348,7 +349,8 @@ void VulkanEngine::init_descriptors() {
   std::vector<vk::DescriptorPoolSize> sizes = {
       {vk::DescriptorType::eUniformBufferDynamic, 10},
       {vk::DescriptorType::eStorageBuffer, 10},
-      {vk::DescriptorType::eStorageBuffer, 10}};
+      {vk::DescriptorType::eStorageBuffer, 10},
+      {vk::DescriptorType::eCombinedImageSampler, 10}};
 
   vk::DescriptorPoolCreateInfo poolInfo;
   poolInfo.setMaxSets(10);
@@ -412,9 +414,19 @@ void VulkanEngine::init_descriptors() {
   objectSetInfo.setBindings(objectBindings);
   m_objectSetLayout = m_device.createDescriptorSetLayout(objectSetInfo);
 
+  // single texture set
+  vk::DescriptorSetLayoutBinding textureBind(
+      0, vk::DescriptorType::eCombinedImageSampler, 1,
+      vk::ShaderStageFlagBits::eFragment);
+
+  vk::DescriptorSetLayoutCreateInfo textureSetInfo;
+  textureSetInfo.setBindings(textureBind);
+  m_singleTextureSetLayout = m_device.createDescriptorSetLayout(textureSetInfo);
+
   m_mainDeletionQueue.push_function([&]() {
     m_device.destroyDescriptorSetLayout(m_globalSetLayout);
     m_device.destroyDescriptorSetLayout(m_objectSetLayout);
+    m_device.destroyDescriptorSetLayout(m_singleTextureSetLayout);
     m_device.destroyDescriptorPool(m_descriptorPool);
   });
 
@@ -512,18 +524,35 @@ void VulkanEngine::init_pipelines() {
       .setOffset(0)
       .setStageFlags(vk::ShaderStageFlagBits::eVertex);
   meshPipelineLayoutInfo.setPushConstantRanges(pushConstant);
-  // setup global descriptor set layout
+
   vk::DescriptorSetLayout setLayouts[] = {m_globalSetLayout, m_objectSetLayout};
   meshPipelineLayoutInfo.setSetLayouts(setLayouts);
-
   m_meshPipelineLayout = m_device.createPipelineLayout(meshPipelineLayoutInfo);
 
-  pipelineBuilder.shaderStages.clear();
+  // setup textured pipeline layout
+  vk::PipelineLayoutCreateInfo texturedPipelineCreateInfo =
+      meshPipelineLayoutInfo;
+  vk::DescriptorSetLayout texturedSetLayouts[] = {
+      m_globalSetLayout, m_objectSetLayout, m_singleTextureSetLayout};
+  texturedPipelineCreateInfo.setSetLayouts(texturedSetLayouts);
+  vk::PipelineLayout texturedPipelineLayout =
+      m_device.createPipelineLayout(texturedPipelineCreateInfo);
+
+  // default vertices
   VertexInputDescription vertexDescription = Vertex::get_vertex_description();
   pipelineBuilder.vertexInputInfo.setVertexAttributeDescriptions(
       vertexDescription.attributes);
   pipelineBuilder.vertexInputInfo.setVertexBindingDescriptions(
       vertexDescription.bindings);
+
+  // default depth
+  pipelineBuilder.pipelineLayout = m_meshPipelineLayout;
+  pipelineBuilder.depthStencil =
+      PipelineBuilder::default_depth_stencil_create_info(
+          true, true, vk::CompareOp::eLessOrEqual);
+
+  // create default mesh pipeline
+  pipelineBuilder.shaderStages.clear();
   pipelineBuilder.shaderStages.push_back(
       PipelineBuilder::default_pipeline_shader_stage_create_info(
           vk::ShaderStageFlagBits::eVertex,
@@ -532,16 +561,31 @@ void VulkanEngine::init_pipelines() {
       PipelineBuilder::default_pipeline_shader_stage_create_info(
           vk::ShaderStageFlagBits::eFragment,
           m_shaderModules["basic_flat_mesh.frag"]));
-  pipelineBuilder.pipelineLayout = m_meshPipelineLayout;
-  pipelineBuilder.depthStencil =
-      PipelineBuilder::default_depth_stencil_create_info(
-          true, true, vk::CompareOp::eLessOrEqual);
+
   m_meshPipeline = pipelineBuilder.build(m_device, m_renderPass);
   create_material(m_meshPipeline, m_meshPipelineLayout, "defaultmesh");
 
+  // create pipeline for textured drawing
+  pipelineBuilder.pipelineLayout = texturedPipelineLayout;
+  pipelineBuilder.shaderStages.clear();
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eVertex,
+          m_shaderModules["basic_normalcolor_mesh.vert"]));
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eFragment,
+          m_shaderModules["textured_lit.frag"]));
+  vk::Pipeline texPipeline = pipelineBuilder.build(m_device, m_renderPass);
+  create_material(texPipeline, texturedPipelineLayout, "texturedmesh");
+
+  //
+
   m_mainDeletionQueue.push_function([=]() {
     m_device.destroyPipeline(m_meshPipeline);
+    m_device.destroyPipeline(texPipeline);
     m_device.destroyPipelineLayout(m_meshPipelineLayout);
+    m_device.destroyPipelineLayout(texturedPipelineLayout);
   });
 
   spdlog::info("Finished building mesh triangle pipeline");

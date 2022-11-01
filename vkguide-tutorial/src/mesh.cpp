@@ -26,10 +26,13 @@ VertexInputDescription Vertex::get_vertex_description() {
       1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
   vk::VertexInputAttributeDescription colorAttribute(
       2, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
+  vk::VertexInputAttributeDescription uvAttribute(
+      3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
 
   description.attributes.push_back(positionAttribute);
   description.attributes.push_back(normalAttribute);
   description.attributes.push_back(colorAttribute);
+  description.attributes.push_back(uvAttribute);
 
   return description;
 }
@@ -61,25 +64,25 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
   }
 
   Mesh m;
-  for (tinyobj::shape_t s : shapes) {
-    // loop over faces
-    size_t index_offset = 0;
-    for (auto f : s.mesh.num_face_vertices) {
-      // hardcode to tris
-      size_t fv = 3;
-      for (size_t v = 0; v < fv; v++) {
-        tinyobj::index_t idx = s.mesh.indices[index_offset + v];
-
-        Vertex new_vert;
-        // position
-        for (int i = 0; i < 3; i++) {
-          new_vert.position[i] = attrib.vertices[fv * idx.vertex_index + i];
-          new_vert.normal[i] = attrib.normals[fv * idx.normal_index + i];
-          new_vert.color[i] = attrib.colors[fv * idx.vertex_index + i];
-        }
-        m.vertices.push_back(new_vert);
+  for (const auto &s : shapes) {
+    for (const auto &idx : s.mesh.indices) {
+      Vertex new_vert;
+      // position
+      for (int i = 0; i < 3; i++) {
+        new_vert.position[i] = attrib.vertices[3 * idx.vertex_index + i];
+        new_vert.normal[i] = attrib.normals[3 * idx.normal_index + i];
+        new_vert.color[i] = attrib.colors[3 * idx.vertex_index + i];
       }
-      index_offset += fv;
+
+      if (idx.texcoord_index != -1) {
+        tinyobj::real_t ux = attrib.texcoords[2 * idx.texcoord_index + 0];
+        tinyobj::real_t uy = attrib.texcoords[2 * idx.texcoord_index + 1];
+
+        new_vert.uv.x = ux;
+        // vulkan specific
+        new_vert.uv.y = 1 - uy;
+      }
+      m.vertices.push_back(new_vert);
     }
   }
   return m;

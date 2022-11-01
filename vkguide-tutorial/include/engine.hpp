@@ -17,6 +17,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "mesh.hpp"
+#include "textures.hpp"
 #include "types.hpp"
 
 namespace vkr {
@@ -64,6 +65,7 @@ struct FrameData {
 };
 
 struct Material {
+  std::optional<vk::DescriptorSet> textureSet; // default to no texture
   VkPipeline pipeline;
   VkPipelineLayout pipelineLayout;
 };
@@ -199,6 +201,13 @@ private:
   void load_meshes();
   void load_obj_mesh(const std::string &path, const std::string &name);
   void upload_mesh(Mesh &mesh);
+
+  // textures
+  // TODO: move to own file
+  std::optional<AllocatedImage> load_image_from_file(const std::string &path);
+  std::unordered_map<std::string, Texture> m_loadedTextures;
+  vk::DescriptorSetLayout m_singleTextureSetLayout;
+  void load_images();
 
   // scene
   void init_scene();
