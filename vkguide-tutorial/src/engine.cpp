@@ -35,6 +35,10 @@ void VulkanEngine::run() {
         m_inputs.keyPressed.erase(e.key.keysym.scancode);
         input_handle_keyup(e.key.keysym.scancode);
         break;
+      case SDL_MOUSEMOTION:
+        break;
+      case SDL_MOUSEWHEEL:
+        break;
       }
     }
 
@@ -52,9 +56,8 @@ void VulkanEngine::cleanup() {
   }
 
   // wait for gpu idle
-  for (FrameData& frame: m_frames) {
-    (void)m_device.waitForFences(frame.m_renderFence, true,
-                                S_TO_NS);
+  for (FrameData &frame : m_frames) {
+    (void)m_device.waitForFences(frame.m_renderFence, true, S_TO_NS);
   }
 
   m_mainDeletionQueue.flush();

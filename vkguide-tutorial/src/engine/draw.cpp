@@ -171,11 +171,13 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
 
     if (object.mesh != lastMesh) {
       vk::DeviceSize offset = 0;
+      cmd.bindIndexBuffer(object.mesh->indexBuffer.buffer, 0,
+                          vk::IndexType::eUint32);
       cmd.bindVertexBuffers(0, object.mesh->vertexBuffer.buffer, offset);
       lastMesh = object.mesh;
     }
 
-    cmd.draw(object.mesh->vertices.size(), 1, 0, i);
+    cmd.drawIndexed(object.mesh->indices.size(), 1, 0, 0, i);
   }
 
   m_allocator.unmapMemory(get_current_frame().objectBuffer.allocation);

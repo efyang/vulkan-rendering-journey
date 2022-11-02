@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <glm/common.hpp>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 #include <vulkan/vulkan.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -65,6 +66,7 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
 
   Mesh m;
   glm::vec3 centroid = glm::vec3(0.);
+  std::unordered_map<Vertex, uint32_t> dedupVertices;
   for (const auto &s : shapes) {
     for (const auto &idx : s.mesh.indices) {
       Vertex new_vert;
@@ -84,11 +86,21 @@ std::optional<Mesh> Mesh::load_from_obj(const char *fileName) {
         new_vert.uv.y = 1 - uy;
       }
       centroid += new_vert.position;
-      m.vertices.push_back(new_vert);
+
+      auto existingVert = dedupVertices.find(new_vert);
+      if (existingVert != dedupVertices.end()) {
+        // exists, use the known index
+        m.indices.push_back(existingVert->second);
+      } else {
+        // doesn't exist, put it in dedup and push back
+        m.vertices.push_back(new_vert);
+        dedupVertices[new_vert] = m.vertices.size() - 1;
+        m.indices.push_back(dedupVertices[new_vert]);
+      }
     }
   }
   // center the mesh
-  centroid /= (double)m.vertices.size();
+  centroid /= (double)m.indices.size();
   for (auto &v : m.vertices) {
     v.position -= centroid;
   }

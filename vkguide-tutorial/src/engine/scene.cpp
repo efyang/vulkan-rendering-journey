@@ -28,8 +28,8 @@ void VulkanEngine::init_scene() {
 
   {
     vk::SamplerCreateInfo samplerInfo;
-    samplerInfo.setMagFilter(vk::Filter::eNearest);
-    samplerInfo.setMinFilter(vk::Filter::eNearest);
+    samplerInfo.setMagFilter(vk::Filter::eLinear);
+    samplerInfo.setMinFilter(vk::Filter::eLinear);
     samplerInfo.setAddressModeU(vk::SamplerAddressMode::eRepeat);
     samplerInfo.setAddressModeV(vk::SamplerAddressMode::eRepeat);
     samplerInfo.setAddressModeW(vk::SamplerAddressMode::eRepeat);

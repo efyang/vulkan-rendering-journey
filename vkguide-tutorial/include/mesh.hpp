@@ -1,6 +1,8 @@
 #pragma once
 
 #include "types.hpp"
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #include <glm/matrix.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -21,11 +23,26 @@ struct Vertex {
   glm::vec2 uv;
 
   static VertexInputDescription get_vertex_description();
+  bool operator==(const Vertex &rhs) const = default;
 };
 
+namespace std {
+template <> struct hash<Vertex> {
+  std::size_t operator()(const Vertex &k) const {
+    auto vec3Hasher = hash<glm::vec3>();
+    return (vec3Hasher(k.position) ^ (vec3Hasher(k.normal) << 1) ^
+            (vec3Hasher(k.color) << 2) ^ (hash<glm::vec2>()(k.uv) << 3));
+  }
+};
+}; // namespace std
+
 struct Mesh {
+  // TODO: merge vbuf and indexbuf into 1
   std::vector<Vertex> vertices;
   AllocatedBuffer vertexBuffer;
+
+  std::vector<uint32_t> indices;
+  AllocatedBuffer indexBuffer;
 
   static std::optional<Mesh> load_from_obj(const char *fileName);
 };

@@ -28,6 +28,11 @@ void VulkanEngine::load_meshes() {
   m_triangleMesh.vertices[1].position = {-1, 1, 0};
   m_triangleMesh.vertices[2].position = {0, -1, 0};
 
+  m_triangleMesh.indices.resize(3);
+  m_triangleMesh.indices[0] = 0;
+  m_triangleMesh.indices[1] = 1;
+  m_triangleMesh.indices[2] = 2;
+
   m_triangleMesh.vertices[0].color = {1, 0, 0};
   m_triangleMesh.vertices[1].color = {0, 1, 0};
   m_triangleMesh.vertices[2].color = {0, 0, 1};
@@ -42,31 +47,57 @@ void VulkanEngine::load_meshes() {
 }
 
 void VulkanEngine::upload_mesh(Mesh &mesh) {
+  // TODO: just use one staging buffer for vertex and index
+  // generalize into staging_copy([sources], dest) -> [offsets]?
   size_t vertexBufferSize = mesh.vertices.size() * sizeof(Vertex);
-  AllocatedBuffer stagingBuffer =
+  AllocatedBuffer vertexStagingBuffer =
       create_buffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc,
                     vma::MemoryUsage::eCpuOnly);
-  void *data = m_allocator.mapMemory(stagingBuffer.allocation);
-  std::memcpy(data, mesh.vertices.data(), vertexBufferSize);
-  m_allocator.unmapMemory(stagingBuffer.allocation);
+  void *v_data = m_allocator.mapMemory(vertexStagingBuffer.allocation);
+  std::memcpy(v_data, mesh.vertices.data(), vertexBufferSize);
+  m_allocator.unmapMemory(vertexStagingBuffer.allocation);
 
   mesh.vertexBuffer = create_buffer(vertexBufferSize,
                                     vk::BufferUsageFlagBits::eVertexBuffer |
                                         vk::BufferUsageFlagBits::eTransferDst,
                                     vma::MemoryUsage::eGpuOnly);
 
+  size_t indexBufferSize = mesh.indices.size() * sizeof(uint32_t);
+  AllocatedBuffer indexStagingBuffer =
+      create_buffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                    vma::MemoryUsage::eCpuOnly);
+  void *i_data = m_allocator.mapMemory(indexStagingBuffer.allocation);
+  std::memcpy(i_data, mesh.indices.data(), indexBufferSize);
+  m_allocator.unmapMemory(indexStagingBuffer.allocation);
+
+  mesh.indexBuffer = create_buffer(indexBufferSize,
+                                   vk::BufferUsageFlagBits::eIndexBuffer |
+                                       vk::BufferUsageFlagBits::eTransferDst,
+                                   vma::MemoryUsage::eGpuOnly);
+
   immediate_submit([&](vk::CommandBuffer cmd) {
-    vk::BufferCopy copy(0, 0, vertexBufferSize);
-    cmd.copyBuffer(stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &copy);
+    vk::BufferCopy copy_verts(0, 0, vertexBufferSize);
+    cmd.copyBuffer(vertexStagingBuffer.buffer, mesh.vertexBuffer.buffer, 1,
+                   &copy_verts);
+    vk::BufferCopy copy_indices(0, 0, indexBufferSize);
+    cmd.copyBuffer(indexStagingBuffer.buffer, mesh.indexBuffer.buffer, 1,
+                   &copy_indices);
   });
 
   m_mainDeletionQueue.push_function([&]() {
     m_allocator.destroyBuffer(mesh.vertexBuffer.buffer,
                               mesh.vertexBuffer.allocation);
+    m_allocator.destroyBuffer(mesh.indexBuffer.buffer,
+                              mesh.indexBuffer.allocation);
   });
-  m_allocator.destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
+  m_allocator.destroyBuffer(vertexStagingBuffer.buffer,
+                            vertexStagingBuffer.allocation);
+  m_allocator.destroyBuffer(indexStagingBuffer.buffer,
+                            indexStagingBuffer.allocation);
 
-  spdlog::info("Uploaded mesh of size {}", vertexBufferSize);
+  spdlog::info("Uploaded mesh of size (bytes): v: {}, i: {}, total: {}",
+               vertexBufferSize, indexBufferSize,
+               vertexBufferSize + indexBufferSize);
 }
 
 void VulkanEngine::immediate_submit(
