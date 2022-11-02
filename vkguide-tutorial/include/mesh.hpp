@@ -39,10 +39,11 @@ template <> struct hash<Vertex> {
 struct Mesh {
   // TODO: merge vbuf and indexbuf into 1
   std::vector<Vertex> vertices;
-  AllocatedBuffer vertexBuffer;
-
   std::vector<uint32_t> indices;
-  AllocatedBuffer indexBuffer;
+
+  // both vertices and indices
+  // [vertices | indices]
+  AllocatedBuffer combinedVertexBuffer;
 
   static std::optional<Mesh> load_from_obj(const char *fileName);
 };

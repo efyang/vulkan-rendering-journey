@@ -171,9 +171,11 @@ void VulkanEngine::draw_objects(vk::CommandBuffer cmd, RenderObject *first,
 
     if (object.mesh != lastMesh) {
       vk::DeviceSize offset = 0;
-      cmd.bindIndexBuffer(object.mesh->indexBuffer.buffer, 0,
+      cmd.bindVertexBuffers(0, object.mesh->combinedVertexBuffer.buffer,
+                            offset);
+      cmd.bindIndexBuffer(object.mesh->combinedVertexBuffer.buffer,
+                          object.mesh->vertices.size() * sizeof(Vertex),
                           vk::IndexType::eUint32);
-      cmd.bindVertexBuffers(0, object.mesh->vertexBuffer.buffer, offset);
       lastMesh = object.mesh;
     }
 
