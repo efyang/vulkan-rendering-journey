@@ -383,9 +383,10 @@ void VulkanEngine::init_descriptors() {
   // allocate camera scene buffer
   uint32_t cameraSceneBufferSize =
       FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUCameraSceneData));
-  m_cameraSceneBuffer = create_buffer(cameraSceneBufferSize,
-                                      vk::BufferUsageFlagBits::eUniformBuffer,
-                                      vma::MemoryUsage::eCpuToGpu);
+  m_cameraSceneBuffer = create_buffer(
+      cameraSceneBufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
+      vma::MemoryUsage::eAuto,
+      vma::AllocationCreateFlagBits::eHostAccessSequentialWrite);
   m_mainDeletionQueue.push_function([&] {
     m_allocator.destroyBuffer(m_cameraSceneBuffer.buffer,
                               m_cameraSceneBuffer.allocation);
@@ -440,9 +441,10 @@ void VulkanEngine::init_descriptors() {
 
     // allocate ssbo buffer for object data
     const int MAX_OBJECTS = 10000;
-    frame.objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS,
-                                       vk::BufferUsageFlagBits::eStorageBuffer,
-                                       vma::MemoryUsage::eCpuToGpu);
+    frame.objectBuffer = create_buffer(
+        sizeof(GPUObjectData) * MAX_OBJECTS,
+        vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eAuto,
+        vma::AllocationCreateFlagBits::eHostAccessSequentialWrite);
 
     vk::DescriptorBufferInfo objectInfo;
     objectInfo.setBuffer(frame.objectBuffer.buffer);
@@ -451,7 +453,8 @@ void VulkanEngine::init_descriptors() {
 
     frame.objectLightingBuffer = create_buffer(
         sizeof(GPUObjectLightingData) * MAX_OBJECTS,
-        vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
+        vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eAuto,
+        vma::AllocationCreateFlagBits::eHostAccessSequentialWrite);
     vk::DescriptorBufferInfo objectLightingInfo;
     objectLightingInfo.setBuffer(frame.objectLightingBuffer.buffer);
     objectLightingInfo.setOffset(0);
@@ -591,16 +594,20 @@ void VulkanEngine::init_pipelines() {
   spdlog::info("Finished building mesh triangle pipeline");
 }
 
+// according to new reference docs, usage should be one of the AUTO enumerations
+// only, use flags to specify instead
 // TODO: move this to a utils section later
-AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize,
-                                            vk::BufferUsageFlags usage,
-                                            vma::MemoryUsage memoryUsage) {
+AllocatedBuffer
+VulkanEngine::create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
+                            vma::MemoryUsage memoryUsage,
+                            vma::AllocationCreateFlags memoryFlags) {
   vk::BufferCreateInfo bufferInfo;
   bufferInfo.setSize(allocSize);
   bufferInfo.setUsage(usage);
 
   vma::AllocationCreateInfo vmaallocInfo;
   vmaallocInfo.setUsage(memoryUsage);
+  vmaallocInfo.setFlags(memoryFlags);
 
   AllocatedBuffer newBuffer;
 

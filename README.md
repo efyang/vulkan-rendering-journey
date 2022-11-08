@@ -50,3 +50,5 @@ meson compile -j8 -C output
 - <https://github.com/SaschaWillems/Vulkan>
 - <https://thebookofshaders.com/>
 - <https://www.thingiverse.com/thing:2984264>
+- <https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html>
+- <https://developer.nvidia.com/vulkan-memory-management>

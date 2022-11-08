@@ -149,7 +149,8 @@ private:
   // descriptors
   // #utility
   AllocatedBuffer create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
-                                vma::MemoryUsage memoryUsage);
+                                vma::MemoryUsage memoryUsage,
+                                vma::AllocationCreateFlags memoryFlags);
 
   // #utility
   size_t pad_uniform_buffer_size(size_t originalSize);

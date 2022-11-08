@@ -55,7 +55,8 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
 
   AllocatedBuffer combinedStagingBuffer =
       create_buffer(combinedBufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-                    vma::MemoryUsage::eCpuOnly);
+                    vma::MemoryUsage::eAuto,
+                    vma::AllocationCreateFlagBits::eHostAccessSequentialWrite);
   char *combinedData =
       (char *)m_allocator.mapMemory(combinedStagingBuffer.allocation);
   std::memcpy(combinedData, mesh.vertices.data(), vertexBufferSize);
@@ -63,12 +64,12 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
               indexBufferSize);
   m_allocator.unmapMemory(combinedStagingBuffer.allocation);
 
-  mesh.combinedVertexBuffer =
-      create_buffer(combinedBufferSize,
-                    vk::BufferUsageFlagBits::eVertexBuffer |
-                        vk::BufferUsageFlagBits::eIndexBuffer |
-                        vk::BufferUsageFlagBits::eTransferDst,
-                    vma::MemoryUsage::eGpuOnly);
+  mesh.combinedVertexBuffer = create_buffer(
+      combinedBufferSize,
+      vk::BufferUsageFlagBits::eVertexBuffer |
+          vk::BufferUsageFlagBits::eIndexBuffer |
+          vk::BufferUsageFlagBits::eTransferDst,
+      vma::MemoryUsage::eAuto, vma::AllocationCreateFlagBits::eDedicatedMemory);
 
   immediate_submit([&](vk::CommandBuffer cmd) {
     vk::BufferCopy copy_all(0, 0, combinedBufferSize);

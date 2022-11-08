@@ -22,9 +22,9 @@ VulkanEngine::load_image_from_file(const std::string &path) {
   vk::Format imageFormat = vk::Format::eR8G8B8A8Srgb;
 
   // TODO: abstract into staging copy
-  AllocatedBuffer stagingBuffer =
-      create_buffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc,
-                    vma::MemoryUsage::eCpuOnly);
+  AllocatedBuffer stagingBuffer = create_buffer(
+      imageSize, vk::BufferUsageFlagBits::eTransferSrc, vma::MemoryUsage::eAuto,
+      vma::AllocationCreateFlagBits::eHostAccessSequentialWrite);
 
   void *data = m_allocator.mapMemory(stagingBuffer.allocation);
   memcpy(data, pixel_ptr, static_cast<size_t>(imageSize));
