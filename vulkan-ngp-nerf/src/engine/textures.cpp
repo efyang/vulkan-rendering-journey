@@ -2,7 +2,8 @@
 #include "common_includes.h"
 #include "engine.hpp"
 
-#define STB_IMAGE_IMPLEMENTATION
+// implementation already defined in libngp static library
+// #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 namespace vkr {

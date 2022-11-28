@@ -21,6 +21,7 @@ list(APPEND CUDA_NVCC_FLAGS "-Xcompiler=-Wno-float-conversion")
 list(APPEND CUDA_NVCC_FLAGS "-Xcompiler=-fno-strict-aliasing")
 list(APPEND CUDA_NVCC_FLAGS "-Xcompiler=-fPIC")
 
+add_subdirectory(instant-ngp)
 find_package(glm REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(SDL2 REQUIRED)
@@ -46,6 +47,9 @@ target_include_directories(engine PRIVATE
     include
     ${SDL2_INCLUDE_DIRS}
     ${Vulkan_INCLUDE_DIRS}
+	instant-ngp/include
+	instant-ngp/dependencies/tinyobjloader
+	instant-ngp/dependencies/stb_image
     )
 
 target_link_libraries(engine PRIVATE
@@ -55,8 +59,10 @@ target_link_libraries(engine PRIVATE
 	glm
 	vk-bootstrap::vk-bootstrap
 	vma
-	tinyobjloader
-	stb-image)
+	# tinyobjloader
+	# stb-image
+	ngp
+	)
 
 add_subdirectory(assets)
 add_dependencies(engine Shaders)

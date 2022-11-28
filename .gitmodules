@@ -37,3 +37,6 @@
 [submodule "vulkan-ngp-nerf/thirdparty/OpenGL"]
 	path = vulkan-ngp-nerf/thirdparty/OpenGL
 	url = https://github.com/McNopper/OpenGL
+[submodule "vulkan-ngp-nerf/instant-ngp"]
+	path = vulkan-ngp-nerf/instant-ngp
+	url = git@github.com:efyang/instant-ngp

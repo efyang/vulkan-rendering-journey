@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vulkan/vulkan.hpp>
 
-#define TINYOBJLOADER_IMPLEMENTATION
+// #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 VertexInputDescription Vertex::get_vertex_description() {
