@@ -7,7 +7,7 @@
 #include <vulkan/vulkan.hpp>
 
 // #define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+#include <tinyobjloader/tiny_obj_loader.h>
 
 VertexInputDescription Vertex::get_vertex_description() {
   VertexInputDescription description;

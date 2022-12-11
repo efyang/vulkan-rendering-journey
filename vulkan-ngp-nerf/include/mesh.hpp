@@ -23,7 +23,10 @@ struct Vertex {
   glm::vec2 uv;
 
   static VertexInputDescription get_vertex_description();
-  bool operator==(const Vertex &rhs) const = default;
+  bool operator==(const Vertex &rhs) const {
+    return (position == rhs.position) && (normal == rhs.normal) &&
+           (color == rhs.color) && (uv == rhs.uv);
+  }
 };
 
 namespace std {

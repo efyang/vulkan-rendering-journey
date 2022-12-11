@@ -113,6 +113,13 @@ public:
   void cleanup();
   void draw();
 
+  // these need to be public for ngp to work
+  vk::Instance m_instance;
+  vk::DebugUtilsMessengerEXT m_debugMessenger;
+  vk::Device m_device;
+  vk::Queue m_graphicsQueue;
+  vk::PhysicalDevice m_physicalDevice;
+  UploadContext m_uploadContext;
 private:
   std::string m_appName = "Vulkan Engine";
   SDL_Window *m_window;
@@ -121,10 +128,6 @@ private:
   uint64_t m_frameNumber = 0;
 
   // vulkan-specific
-  vk::Instance m_instance;
-  vk::DebugUtilsMessengerEXT m_debugMessenger;
-  vk::PhysicalDevice m_physicalDevice;
-  vk::Device m_device;
   vk::SurfaceKHR m_surface;
   vk::PhysicalDeviceProperties m_gpuProperties;
   void init_vulkan();
@@ -135,7 +138,6 @@ private:
   std::vector<VkImageView> m_swapchainImageViews;
   void init_swapchain();
 
-  vk::Queue m_graphicsQueue;
   uint32_t m_graphicsQueueFamily;
 
   // framebuffers
@@ -196,7 +198,6 @@ private:
   Mesh *get_mesh(const std::string &name);
   void draw_objects(vk::CommandBuffer cmd, RenderObject *first, int count);
   Mesh m_triangleMesh;
-  UploadContext m_uploadContext;
   // #utility
   // instantly submit commands to cmd
   void immediate_submit(std::function<void(vk::CommandBuffer cmd)> &&function);
@@ -220,6 +221,8 @@ private:
   Inputs m_inputs;
   void input_handle_keydown(SDL_Scancode &key);
   void input_handle_keyup(SDL_Scancode &key);
+
+  void init_ngp();
 };
 
 } // namespace vkr

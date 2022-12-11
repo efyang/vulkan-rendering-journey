@@ -10,6 +10,14 @@
 
 #include "common_includes.h"
 
+// ngp
+#include <neural-graphics-primitives/dlss.h>
+
+// ngx
+#include <nvsdk_ngx_vk.h>
+#include <nvsdk_ngx_helpers.h>
+#include <nvsdk_ngx_helpers_vk.h>
+
 // in package
 #include "engine.hpp"
 #include "pipeline.hpp"
@@ -45,17 +53,36 @@ void VulkanEngine::init() {
   load_meshes();
   load_images();
   init_scene();
+  init_ngp();
 
   // everything went fine
   m_isInitialized = true;
 }
 
 void VulkanEngine::init_vulkan() {
+  uint32_t n_ngx_instance_extensions = 0;
+  const char** ngx_instance_extensions;
+
+  uint32_t n_ngx_device_extensions = 0;
+  const char** ngx_device_extensions;
+
+  NVSDK_NGX_VULKAN_RequiredExtensions(&n_ngx_instance_extensions, &ngx_instance_extensions, &n_ngx_device_extensions, &ngx_device_extensions);
+
   vkb::InstanceBuilder instanceBuilder;
-  auto vkb_inst = instanceBuilder.set_app_name(m_appName.c_str())
+  auto vkb_instbuilder = instanceBuilder.set_app_name(m_appName.c_str())
                       .request_validation_layers(true)
                       .require_api_version(1, 3, 0)
                       .use_default_debug_messenger()
+                      .enable_extension(VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME)
+                      .enable_extension(VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME)
+                      .enable_extension(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME)
+                      .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+  // std::cout << "enabling instance extensions" << std::endl;
+	// for (uint32_t i = 0; i < n_ngx_instance_extensions; ++i) {
+  //   std::cout << ngx_instance_extensions[i] << std::endl;
+	// 	vkb_instbuilder.enable_extension(ngx_instance_extensions[i]);
+	// } 
+  auto vkb_inst = vkb_instbuilder
                       .build()
                       .value();
 
@@ -72,10 +99,18 @@ void VulkanEngine::init_vulkan() {
   spdlog::info("Initialized vulkan surface via sdl");
 
   vkb::PhysicalDeviceSelector selector{vkb_inst};
+  vk::PhysicalDeviceFeatures features;
+  features.shaderStorageImageWriteWithoutFormat = true;
   vk::PhysicalDeviceVulkan13Features features_13;
   features_13.dynamicRendering = true;
   selector = selector.set_minimum_version(1, 3)
                  .set_surface(m_surface)
+                 .add_required_extension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME)
+                 .add_required_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)
+                 .add_required_extension(VK_KHR_DEVICE_GROUP_EXTENSION_NAME)
+                 .add_required_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)
+                 .add_required_extension(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)
+                 .set_required_features(features)
                  .set_required_features_13(
                      static_cast<VkPhysicalDeviceVulkan13Features>(features_13))
       /*
@@ -84,13 +119,22 @@ void VulkanEngine::init_vulkan() {
       .add_required_extension("VK_NV_mesh_shader")
       */
       ;
+
+  // std::cout << "enabling device extensions" << std::endl;
+	// for (uint32_t i = 0; i < n_ngx_device_extensions; ++i) {
+  //   std::cout << ngx_device_extensions[i] << std::endl;
+	// 	selector = selector.add_required_extension(ngx_device_extensions[i]);
+	// }
+
+  // TODO: copy over physical device selection code based on cuda from dlss.cu
+
   auto availableDevices = selector.select_device_names();
   uint32_t idx = 0;
   for (std::string name : availableDevices.value()) {
     spdlog::info("Available physical device {}: {}", idx++, name);
   }
 
-  vkb::PhysicalDevice physicalDevice = selector.select().value();
+  vkb::PhysicalDevice physicalDevice = selector.set_name("NVIDIA GeForce RTX 3070 Laptop GPU").select().value();
   vkb::DeviceBuilder deviceBuilder(physicalDevice);
   vk::PhysicalDeviceShaderDrawParametersFeatures
       shader_draw_parameters_features(true);
@@ -101,8 +145,73 @@ void VulkanEngine::init_vulkan() {
   m_physicalDevice = vkbDevice.physical_device;
   m_gpuProperties = vkbDevice.physical_device.properties;
 
+	struct QueueFamilyIndices {
+		int graphics_family = -1;
+		int compute_family = -1;
+		int transfer_family = -1;
+		int all_family = -1;
+	};
+
+	auto find_queue_families = [](VkPhysicalDevice device) {
+		QueueFamilyIndices indices;
+
+		uint32_t queue_family_count = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
+
+		std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
+
+		int i = 0;
+		for (const auto& queue_family : queue_families) {
+			if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+				indices.graphics_family = i;
+			}
+
+			if (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+				indices.compute_family = i;
+			}
+
+			if (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+				indices.transfer_family = i;
+			}
+
+			if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) && (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
+				indices.all_family = i;
+			}
+
+			i++;
+		}
+
+		return indices;
+	};
+
+
+
+	cudaDeviceProp cuda_device_prop;
+	CUDA_CHECK_THROW(cudaGetDeviceProperties(&cuda_device_prop, tcnn::cuda_device()));
+
+	auto is_same_as_cuda_device = [&](VkPhysicalDevice device) {
+		VkPhysicalDeviceIDProperties physical_device_id_properties = {};
+		physical_device_id_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+		physical_device_id_properties.pNext = NULL;
+
+		VkPhysicalDeviceProperties2 physical_device_properties = {};
+		physical_device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		physical_device_properties.pNext = &physical_device_id_properties;
+
+		vkGetPhysicalDeviceProperties2(device, &physical_device_properties);
+
+		return !memcmp(&cuda_device_prop.uuid, physical_device_id_properties.deviceUUID, VK_UUID_SIZE) && find_queue_families(device).all_family >= 0;
+	};
+
+  if (is_same_as_cuda_device(m_physicalDevice)) {
+    std::cout << "vulkan cuda device okay" << std::endl;
+  } else {
+    std::cout << "vulkan cuda device will fail" << std::endl;
+  }
+
   spdlog::info("Initialized physical device: {}",
-               m_physicalDevice.getProperties().deviceName);
+               std::string(m_physicalDevice.getProperties().deviceName));
   spdlog::info("With minimum buffer alignment of {}",
                m_gpuProperties.limits.minUniformBufferOffsetAlignment);
 
@@ -616,5 +725,16 @@ VulkanEngine::create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
   newBuffer.allocation = allocated.second;
 
   return newBuffer;
+}
+
+void VulkanEngine::init_ngp() {
+    ngp::init_ngp_vulkan_manual(
+        m_instance,
+        VK_NULL_HANDLE,
+	    m_physicalDevice,
+		m_device,
+		m_graphicsQueue,
+		m_uploadContext.commandPool,
+		m_uploadContext.commandBuffer);
 }
 } // namespace vkr

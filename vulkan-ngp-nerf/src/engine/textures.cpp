@@ -4,7 +4,7 @@
 
 // implementation already defined in libngp static library
 // #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include <stb_image/stb_image.h>
 
 namespace vkr {
 std::optional<AllocatedImage>
