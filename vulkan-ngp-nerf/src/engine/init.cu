@@ -138,8 +138,10 @@ void VulkanEngine::init_vulkan() {
   vkb::DeviceBuilder deviceBuilder(physicalDevice);
   vk::PhysicalDeviceShaderDrawParametersFeatures
       shader_draw_parameters_features(true);
+  vk::PhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_feature(true);
   vkb::Device vkbDevice =
-      deviceBuilder.add_pNext(&shader_draw_parameters_features).build().value();
+      deviceBuilder.add_pNext(&shader_draw_parameters_features)
+        .add_pNext(&buffer_device_address_feature).build().value();
 
   m_device = vkbDevice.device;
   m_physicalDevice = vkbDevice.physical_device;

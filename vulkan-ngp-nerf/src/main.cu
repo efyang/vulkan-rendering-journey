@@ -29,10 +29,21 @@ int main() {
   testbed.load_snapshot("../instant-ngp/data/nerf/fox/base.msgpack");
   
   // create an Eigen::vector
+  Eigen::Matrix<float, 3, 4> camera_matrix;
+  camera_matrix << 1, 0, 0, 0,
+       0, 1, 0, 0,
+       0, 0, 1, 0;
+  std::cout << camera_matrix;
   Eigen::Vector4f rolling_shutter = Eigen::Vector4f::Zero();
 
   // create a vulkan texture
-  ngp::VulkanTextureSurface vktex(Eigen::Vector2i(1920, 1080), 4);
+  std::shared_ptr<ngp::SurfaceProvider> vktex = std::make_shared<ngp::VulkanTextureSurface>(Eigen::Vector2i(1920, 1080), 4);
+  ngp::CudaRenderBuffer vkRenderSurface(vktex);
+  vkRenderSurface.resize(Eigen::Vector2i(1920, 1080));
+
+  // cuda-memcheck okay up until here
+  // fails cuda memcheck, causes segfault
+  testbed.render_frame(camera_matrix, camera_matrix, rolling_shutter, vkRenderSurface);
 
   engine.run();
   engine.cleanup();
