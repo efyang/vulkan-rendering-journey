@@ -55,7 +55,7 @@ void VulkanEngine::init_scene() {
 
     // point descriptor set to texture
     vk::DescriptorImageInfo imageBufferInfo(
-        blockySampler, m_loadedTextures["empire_diffuse"].imageView,
+        blockySampler, m_loadedTextures["ngpnerf"].imageView,
         vk::ImageLayout::eShaderReadOnlyOptimal);
     vk::WriteDescriptorSet writeTex1;
     writeTex1.setImageInfo(imageBufferInfo);

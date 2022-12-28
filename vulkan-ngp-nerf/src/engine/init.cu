@@ -11,7 +11,11 @@
 #include "common_includes.h"
 
 // ngp
+#include <neural-graphics-primitives/testbed.h>
 #include <neural-graphics-primitives/dlss.h>
+#include <neural-graphics-primitives/common.h>
+#include <neural-graphics-primitives/render_buffer.h>
+#include <ngp.h>
 
 // ngx
 #include <nvsdk_ngx_vk.h>
@@ -52,8 +56,8 @@ void VulkanEngine::init() {
   init_pipelines();
   load_meshes();
   load_images();
-  init_scene();
   init_ngp();
+  init_scene();
 
   // everything went fine
   m_isInitialized = true;
@@ -294,6 +298,7 @@ void VulkanEngine::init_swapchain() {
 void VulkanEngine::init_commands() {
   // create upload command pool
   vk::CommandPoolCreateFlags uploadCommandPoolCreateFlags;
+  uploadCommandPoolCreateFlags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
   vk::CommandPoolCreateInfo uploadCommandPoolInfo(uploadCommandPoolCreateFlags,
                                                   m_graphicsQueueFamily);
   m_uploadContext.commandPool =
@@ -738,5 +743,69 @@ void VulkanEngine::init_ngp() {
 		m_graphicsQueue,
 		m_uploadContext.commandPool,
 		m_uploadContext.commandBuffer);
+
+  // ------------------------------ NGP test code -------------------------------------
+  // initialize a testbed
+  ngp::Testbed testbed(ngp::ETestbedMode::Nerf);
+  // load the fox snapshot
+  testbed.load_snapshot("../instant-ngp/data/nerf/fox/base.msgpack");
+  
+  // create an Eigen::vector
+  Eigen::Matrix<float, 3, 4> camera_matrix;
+  // camera_matrix << 1, 0, 0, 0,
+  //      0, 1, 0, 0,
+  //      0, 0, 1, 0;
+  // taken from basic init of instant-ngp testbed
+  camera_matrix << 1, 0, 0, 0.5,
+        0, -1,  0, 0.5,
+        0,  0, -1,   2;
+  std::cout << camera_matrix;
+  Eigen::Vector4f rolling_shutter = Eigen::Vector4f::Zero();
+
+  // create a vulkan texture
+  std::shared_ptr<ngp::VulkanTextureSurface> vktex = std::make_shared<ngp::VulkanTextureSurface>(Eigen::Vector2i(1920, 1080), 4);
+  ngp::CudaRenderBuffer vkRenderSurface(vktex);
+  vkRenderSurface.resize(Eigen::Vector2i(1920, 1080));
+
+  Texture ngpnerf;
+  ngpnerf.image = {vktex->vk_image()};
+
+  immediate_submit([&](vk::CommandBuffer cmd) {
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                    1);
+    // now transform image to shader optimal reading
+    vk::ImageMemoryBarrier imageBarrier_toReadable;
+    imageBarrier_toReadable.setImage(ngpnerf.image.image);
+    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eGeneral);
+    imageBarrier_toReadable.setNewLayout(
+        vk::ImageLayout::eShaderReadOnlyOptimal);
+    imageBarrier_toReadable.setSubresourceRange(range);
+    imageBarrier_toReadable.setSrcAccessMask(
+        vk::AccessFlagBits::eTransferWrite);
+    imageBarrier_toReadable.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
+                        nullptr, imageBarrier_toReadable);
+    spdlog::info("Converted image successfully");
+  });
+
+  vk::ImageViewCreateInfo imageViewCreate;
+  imageViewCreate.setImage(ngpnerf.image.image);
+  imageViewCreate.setFormat(vk::Format::eR32G32B32A32Sfloat);
+  imageViewCreate.setViewType(vk::ImageViewType::e2D);
+  imageViewCreate.subresourceRange.setAspectMask(
+      vk::ImageAspectFlagBits::eColor);
+  imageViewCreate.subresourceRange.setBaseMipLevel(0);
+  imageViewCreate.subresourceRange.setLevelCount(1);
+  imageViewCreate.subresourceRange.setBaseArrayLayer(0);
+  imageViewCreate.subresourceRange.setLayerCount(1);
+  ngpnerf.imageView = m_device.createImageView(imageViewCreate);
+  // image is getting freed - we probably need to blit it over
+
+  m_loadedTextures["ngpnerf"] = ngpnerf;
+
+  m_mainDeletionQueue.push_function(
+      [=] { m_device.destroyImageView(ngpnerf.imageView); });
+
 }
 } // namespace vkr

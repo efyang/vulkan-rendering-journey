@@ -120,6 +120,7 @@ public:
   vk::Queue m_graphicsQueue;
   vk::PhysicalDevice m_physicalDevice;
   UploadContext m_uploadContext;
+  std::unordered_map<std::string, Texture> m_loadedTextures;
 private:
   std::string m_appName = "Vulkan Engine";
   SDL_Window *m_window;
@@ -208,7 +209,7 @@ private:
   // textures
   // TODO: move to own file
   std::optional<AllocatedImage> load_image_from_file(const std::string &path);
-  std::unordered_map<std::string, Texture> m_loadedTextures;
+  // std::unordered_map<std::string, Texture> m_loadedTextures;
   vk::DescriptorSetLayout m_singleTextureSetLayout;
   void load_images();
 
