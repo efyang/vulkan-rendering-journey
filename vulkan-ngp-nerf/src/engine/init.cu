@@ -767,8 +767,111 @@ void VulkanEngine::init_ngp() {
   ngp::CudaRenderBuffer vkRenderSurface(vktex);
   vkRenderSurface.resize(Eigen::Vector2i(1920, 1080));
 
+  spdlog::info("Rendering nerf frame... ");
+  testbed.render_frame(camera_matrix, camera_matrix, rolling_shutter, vkRenderSurface);
+  spdlog::info("Finished rendering nerf frame.");
+
+  vk::Image ngpRawImage(vktex->vk_image());
+
+  spdlog::info("Creating new image to hold nerf texture...");
+// create new image
+  int texWidth = 1920;
+  int texHeight = 1080;
+  vk::Extent3D imageExtent;
+  imageExtent.setWidth(texWidth);
+  imageExtent.setHeight(texHeight);
+  imageExtent.setDepth(1);
+
+  vk::DeviceSize imageSize = texWidth * texHeight * 4;
+  vk::Format imageFormat = vk::Format::eR8G8B8A8Srgb;
+
+  vk::ImageCreateInfo imageInfo;
+  imageInfo.setFormat(imageFormat);
+  imageInfo.setUsage(vk::ImageUsageFlagBits::eTransferDst |
+                     vk::ImageUsageFlagBits::eSampled);
+  imageInfo.setExtent(imageExtent);
+  imageInfo.setMipLevels(1);
+  imageInfo.setArrayLayers(1);
+  imageInfo.setSamples(vk::SampleCountFlagBits::e1);
+  imageInfo.setTiling(vk::ImageTiling::eOptimal);
+  imageInfo.setImageType(vk::ImageType::e2D);
+
+  AllocatedImage newImage;
+  vma::AllocationCreateInfo imageAllocInfo;
+  imageAllocInfo.setUsage(vma::MemoryUsage::eGpuOnly);
+  std::pair<vk::Image, vma::Allocation> allocedImage =
+      m_allocator.createImage(imageInfo, imageAllocInfo);
+  newImage.image = allocedImage.first;
+  newImage.allocation = allocedImage.second;
+  spdlog::info("Allocated new image to hold nerf texture.");
+
+  // transition image layout
+  immediate_submit([&](vk::CommandBuffer cmd) {
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                    1);
+
+// keep this
+    vk::ImageMemoryBarrier imageBarrier_toTransfer;
+    imageBarrier_toTransfer.setOldLayout(vk::ImageLayout::eUndefined);
+    imageBarrier_toTransfer.setNewLayout(vk::ImageLayout::eTransferDstOptimal);
+    imageBarrier_toTransfer.setImage(newImage.image);
+    imageBarrier_toTransfer.setSubresourceRange(range);
+    imageBarrier_toTransfer.setSrcAccessMask({});
+    imageBarrier_toTransfer.setDstAccessMask(
+        vk::AccessFlagBits::eTransferWrite);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                        vk::PipelineStageFlagBits::eTransfer, {}, nullptr,
+                        nullptr, imageBarrier_toTransfer);
+
+    // do our blit
+    vk::ImageBlit blitRegion;
+    blitRegion.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+    blitRegion.srcSubresource.mipLevel = 0;
+    blitRegion.srcSubresource.baseArrayLayer = 0;
+    blitRegion.srcSubresource.layerCount = 1;
+    blitRegion.srcOffsets[0].x = 0;
+    blitRegion.srcOffsets[0].y = 0;
+    blitRegion.srcOffsets[0].z = 0;
+    blitRegion.srcOffsets[1].x = texWidth;
+    blitRegion.srcOffsets[1].y = texHeight;
+    blitRegion.srcOffsets[1].z = 1;
+    blitRegion.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+    blitRegion.dstSubresource.mipLevel = 0;
+    blitRegion.dstSubresource.baseArrayLayer = 0;
+    blitRegion.dstSubresource.layerCount = 1;
+    blitRegion.dstOffsets[0] = blitRegion.srcOffsets[0];
+    blitRegion.dstOffsets[1] = blitRegion.srcOffsets[1];
+
+    cmd.blitImage(ngpRawImage,
+                  vk::ImageLayout::eGeneral,
+                  newImage.image,
+                  vk::ImageLayout::eTransferDstOptimal,
+                  blitRegion,
+                  vk::Filter::eNearest);
+/*
+    // now transform image to shader optimal reading
+    vk::ImageMemoryBarrier imageBarrier_toReadable;
+    imageBarrier_toReadable.setImage(newImage.image);
+    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eTransferDstOptimal);
+    imageBarrier_toReadable.setNewLayout(
+        vk::ImageLayout::eShaderReadOnlyOptimal);
+    imageBarrier_toReadable.setSubresourceRange(range);
+    imageBarrier_toReadable.setSrcAccessMask(
+        vk::AccessFlagBits::eTransferWrite);
+    imageBarrier_toReadable.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
+                        nullptr, imageBarrier_toReadable);
+*/
+  });
+
+  m_mainDeletionQueue.push_function(
+      [=]() { m_allocator.destroyImage(newImage.image, newImage.allocation); });
+
+
+
   Texture ngpnerf;
-  ngpnerf.image = {vktex->vk_image()};
+  ngpnerf.image = newImage;
 
   immediate_submit([&](vk::CommandBuffer cmd) {
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
@@ -776,7 +879,7 @@ void VulkanEngine::init_ngp() {
     // now transform image to shader optimal reading
     vk::ImageMemoryBarrier imageBarrier_toReadable;
     imageBarrier_toReadable.setImage(ngpnerf.image.image);
-    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eGeneral);
+    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eTransferDstOptimal);
     imageBarrier_toReadable.setNewLayout(
         vk::ImageLayout::eShaderReadOnlyOptimal);
     imageBarrier_toReadable.setSubresourceRange(range);
@@ -791,7 +894,7 @@ void VulkanEngine::init_ngp() {
 
   vk::ImageViewCreateInfo imageViewCreate;
   imageViewCreate.setImage(ngpnerf.image.image);
-  imageViewCreate.setFormat(vk::Format::eR32G32B32A32Sfloat);
+  imageViewCreate.setFormat(vk::Format::eR8G8B8A8Srgb);
   imageViewCreate.setViewType(vk::ImageViewType::e2D);
   imageViewCreate.subresourceRange.setAspectMask(
       vk::ImageAspectFlagBits::eColor);
