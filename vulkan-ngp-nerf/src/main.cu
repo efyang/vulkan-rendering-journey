@@ -1,3 +1,5 @@
+#define VMA_IMPLEMENTATION
+
 #include <glm/common.hpp>
 #include <iostream>
 #include <spdlog/spdlog.h>
@@ -7,7 +9,7 @@
 #include <neural-graphics-primitives/dlss.h>
 #include <neural-graphics-primitives/common.h>
 #include <neural-graphics-primitives/render_buffer.h>
-#include <ngp.h>
+#include <ngp.hpp>
 
 #include "engine.hpp"
 

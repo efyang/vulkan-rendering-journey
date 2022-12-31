@@ -55,3 +55,17 @@ struct MeshPushConstants {
   glm::vec4 data;
   glm::mat4 render_matrix;
 };
+
+struct Material {
+  std::optional<vk::DescriptorSet> textureSet; // default to no texture
+  VkPipeline pipeline;
+  VkPipelineLayout pipelineLayout;
+};
+
+struct RenderObject {
+  Mesh *mesh;
+  Material *material;
+  glm::mat4 transformMatrix;
+
+  // ~RenderObject() { spdlog::warn("Renderobject destroyed"); }
+};

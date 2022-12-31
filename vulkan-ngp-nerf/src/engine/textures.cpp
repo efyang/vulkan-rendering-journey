@@ -7,8 +7,8 @@
 #include <stb_image/stb_image.h>
 
 namespace vkr {
-std::optional<AllocatedImage>
-VulkanEngine::load_image_from_file(const std::string &path) {
+std::shared_ptr<Texture>
+VulkanEngine::load_image_texture_from_file(const std::string &path) {
   int texWidth, texHeight, texChannels;
   stbi_uc *pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels,
                               STBI_rgb_alpha);
@@ -33,7 +33,60 @@ VulkanEngine::load_image_from_file(const std::string &path) {
 
   stbi_image_free(pixels);
 
+  std::shared_ptr<Texture> texture = createEmptyDefaultTexture(
+      texWidth, texHeight, imageFormat, vk::ImageLayout::eTransferDstOptimal,
+      vk::AccessFlagBits::eTransferWrite,
+      vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+      vk::PipelineStageFlagBits::eTransfer);
+
   // image data is now in the staging buffer, now setup gpu receiver image
+  // transition image layout
+  immediate_submit([&](vk::CommandBuffer cmd) {
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                    1);
+    // now do the actual copy from the staging buffer to the gpu image
+    vk::BufferImageCopy copyRegion(0, 0, 0);
+    copyRegion.imageSubresource.setAspectMask(vk::ImageAspectFlagBits::eColor);
+    copyRegion.imageSubresource.setMipLevel(0);
+    copyRegion.imageSubresource.setBaseArrayLayer(0);
+    copyRegion.imageSubresource.setLayerCount(1);
+    copyRegion.setImageExtent(texture->imageExtent);
+
+    cmd.copyBufferToImage(stagingBuffer.buffer, texture->image.image,
+                          vk::ImageLayout::eTransferDstOptimal, copyRegion);
+
+    // now transform image to shader optimal reading
+    vk::ImageMemoryBarrier imageBarrier_toReadable;
+    imageBarrier_toReadable.setImage(texture->image.image);
+    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eTransferDstOptimal);
+    imageBarrier_toReadable.setNewLayout(
+        vk::ImageLayout::eShaderReadOnlyOptimal);
+    imageBarrier_toReadable.setSubresourceRange(range);
+    imageBarrier_toReadable.setSrcAccessMask(
+        vk::AccessFlagBits::eTransferWrite);
+    imageBarrier_toReadable.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
+                        nullptr, imageBarrier_toReadable);
+  });
+
+  m_allocator.destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
+
+  spdlog::info("Loaded texture successfully from: {}", path);
+
+  return texture;
+}
+
+void VulkanEngine::load_images() {
+  m_loadedTextures["empire_diffuse"] =
+      load_image_texture_from_file("../assets/models/viking_room.png");
+}
+
+std::shared_ptr<Texture> VulkanEngine::createEmptyDefaultTexture(
+    int texWidth, int texHeight, vk::Format imageFormat,
+    vk::ImageLayout imageLayout, vk::Flags<vk::AccessFlagBits> imageAccess,
+    vk::Flags<vk::ImageUsageFlagBits> usage,
+    vk::Flags<vk::PipelineStageFlagBits> setupCompletionPipelineStage) {
   vk::Extent3D imageExtent;
   imageExtent.setWidth(texWidth);
   imageExtent.setHeight(texHeight);
@@ -41,8 +94,7 @@ VulkanEngine::load_image_from_file(const std::string &path) {
 
   vk::ImageCreateInfo imageInfo;
   imageInfo.setFormat(imageFormat);
-  imageInfo.setUsage(vk::ImageUsageFlagBits::eTransferDst |
-                     vk::ImageUsageFlagBits::eSampled);
+  imageInfo.setUsage(usage);
   imageInfo.setExtent(imageExtent);
   imageInfo.setMipLevels(1);
   imageInfo.setArrayLayers(1);
@@ -58,67 +110,31 @@ VulkanEngine::load_image_from_file(const std::string &path) {
   newImage.image = allocedImage.first;
   newImage.allocation = allocedImage.second;
 
-  // transition image layout
+  // transition to wanted image layout
   immediate_submit([&](vk::CommandBuffer cmd) {
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
                                     1);
-
     vk::ImageMemoryBarrier imageBarrier_toTransfer;
     imageBarrier_toTransfer.setOldLayout(vk::ImageLayout::eUndefined);
-    imageBarrier_toTransfer.setNewLayout(vk::ImageLayout::eTransferDstOptimal);
+    imageBarrier_toTransfer.setNewLayout(imageLayout);
     imageBarrier_toTransfer.setImage(newImage.image);
     imageBarrier_toTransfer.setSubresourceRange(range);
     imageBarrier_toTransfer.setSrcAccessMask({});
-    imageBarrier_toTransfer.setDstAccessMask(
-        vk::AccessFlagBits::eTransferWrite);
+    imageBarrier_toTransfer.setDstAccessMask(imageAccess);
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eTransfer, {}, nullptr,
-                        nullptr, imageBarrier_toTransfer);
-
-    // now do the actual copy from the staging buffer to the gpu image
-    vk::BufferImageCopy copyRegion(0, 0, 0);
-    copyRegion.imageSubresource.setAspectMask(vk::ImageAspectFlagBits::eColor);
-    copyRegion.imageSubresource.setMipLevel(0);
-    copyRegion.imageSubresource.setBaseArrayLayer(0);
-    copyRegion.imageSubresource.setLayerCount(1);
-    copyRegion.setImageExtent(imageExtent);
-
-    cmd.copyBufferToImage(stagingBuffer.buffer, newImage.image,
-                          vk::ImageLayout::eTransferDstOptimal, copyRegion);
-
-    // now transform image to shader optimal reading
-    vk::ImageMemoryBarrier imageBarrier_toReadable;
-    imageBarrier_toReadable.setImage(newImage.image);
-    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eTransferDstOptimal);
-    imageBarrier_toReadable.setNewLayout(
-        vk::ImageLayout::eShaderReadOnlyOptimal);
-    imageBarrier_toReadable.setSubresourceRange(range);
-    imageBarrier_toReadable.setSrcAccessMask(
-        vk::AccessFlagBits::eTransferWrite);
-    imageBarrier_toReadable.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
-                        nullptr, imageBarrier_toReadable);
+                        setupCompletionPipelineStage, {}, nullptr, nullptr,
+                        imageBarrier_toTransfer);
   });
 
   m_mainDeletionQueue.push_function(
-      [=]() { m_allocator.destroyImage(newImage.image, newImage.allocation); });
+      [&]() { m_allocator.destroyImage(newImage.image, newImage.allocation); });
 
-  m_allocator.destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
-
-  spdlog::info("Loaded texture successfully from: {}", path);
-
-  return newImage;
-}
-
-void VulkanEngine::load_images() {
-  Texture lostEmpire;
-  lostEmpire.image =
-      load_image_from_file("../assets/models/viking_room.png").value();
-
+  std::shared_ptr<Texture> newTexture = std::make_shared<Texture>();
+  newTexture->image = newImage;
+  newTexture->imageExtent = imageExtent;
   vk::ImageViewCreateInfo imageViewCreate;
-  imageViewCreate.setImage(lostEmpire.image.image);
-  imageViewCreate.setFormat(vk::Format::eR8G8B8A8Srgb);
+  imageViewCreate.setImage(newTexture->image.image);
+  imageViewCreate.setFormat(imageFormat);
   imageViewCreate.setViewType(vk::ImageViewType::e2D);
   imageViewCreate.subresourceRange.setAspectMask(
       vk::ImageAspectFlagBits::eColor);
@@ -126,12 +142,11 @@ void VulkanEngine::load_images() {
   imageViewCreate.subresourceRange.setLevelCount(1);
   imageViewCreate.subresourceRange.setBaseArrayLayer(0);
   imageViewCreate.subresourceRange.setLayerCount(1);
-  lostEmpire.imageView = m_device.createImageView(imageViewCreate);
-
-  m_loadedTextures["empire_diffuse"] = lostEmpire;
+  newTexture->imageView = m_device.createImageView(imageViewCreate);
 
   m_mainDeletionQueue.push_function(
-      [=] { m_device.destroyImageView(lostEmpire.imageView); });
-}
+      [&] { m_device.destroyImageView(newTexture->imageView); });
 
+  return newTexture;
+}
 } // namespace vkr

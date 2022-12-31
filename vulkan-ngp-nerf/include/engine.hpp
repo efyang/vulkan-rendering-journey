@@ -12,8 +12,7 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-#define VMA_IMPLEMENTATION
-#include <vk_mem_alloc.hpp>
+#include "common_includes.h"
 #include <vulkan/vulkan.hpp>
 
 #include "mesh.hpp"
@@ -64,18 +63,6 @@ struct FrameData {
   vk::DescriptorSet objectDescriptorSet;
 };
 
-struct Material {
-  std::optional<vk::DescriptorSet> textureSet; // default to no texture
-  VkPipeline pipeline;
-  VkPipelineLayout pipelineLayout;
-};
-
-struct RenderObject {
-  Mesh *mesh;
-  Material *material;
-  glm::mat4 transformMatrix;
-};
-
 struct DeletionQueue {
   std::deque<std::function<void()>> deletors;
 
@@ -120,7 +107,19 @@ public:
   vk::Queue m_graphicsQueue;
   vk::PhysicalDevice m_physicalDevice;
   UploadContext m_uploadContext;
-  std::unordered_map<std::string, Texture> m_loadedTextures;
+  UploadContext m_ngpUploadContext;
+  std::unordered_map<std::string, std::shared_ptr<Texture>> m_loadedTextures;
+
+  // instantly submit commands to cmd
+  void immediate_submit(std::function<void(vk::CommandBuffer cmd)> &&function);
+  std::shared_ptr<Texture> createEmptyDefaultTexture(
+      int texWidth, int texHeight, vk::Format imageFormat,
+      vk::ImageLayout imageLayout, vk::Flags<vk::AccessFlagBits> imageAccess,
+      vk::Flags<vk::ImageUsageFlagBits> usage,
+      vk::Flags<vk::PipelineStageFlagBits> setupCompletionPipelineStage);
+  std::unordered_map<std::string, Mesh> m_meshes;
+  void upload_mesh(Mesh &mesh);
+
 private:
   std::string m_appName = "Vulkan Engine";
   SDL_Window *m_window;
@@ -151,6 +150,9 @@ private:
 
   // descriptors
   // #utility
+  // memory related
+  vma::Allocator m_allocator;
+  DeletionQueue m_mainDeletionQueue;
   AllocatedBuffer create_buffer(size_t allocSize, vk::BufferUsageFlags usage,
                                 vma::MemoryUsage memoryUsage,
                                 vma::AllocationCreateFlags memoryFlags);
@@ -175,10 +177,6 @@ private:
   std::unordered_map<std::string, vk::ShaderModule> m_shaderModules;
   void init_shader_modules();
 
-  // memory related
-  vma::Allocator m_allocator;
-  DeletionQueue m_mainDeletionQueue;
-
   // pipelines
   vk::PipelineLayout m_meshPipelineLayout;
   vk::Pipeline m_meshPipeline;
@@ -192,7 +190,6 @@ private:
   // objects and meshes
   std::vector<RenderObject> m_renderables;
   std::unordered_map<std::string, Material> m_materials;
-  std::unordered_map<std::string, Mesh> m_meshes;
   Material *create_material(VkPipeline pipeline, VkPipelineLayout layout,
                             const std::string &name);
   Material *get_material(const std::string &name);
@@ -200,21 +197,20 @@ private:
   void draw_objects(vk::CommandBuffer cmd, RenderObject *first, int count);
   Mesh m_triangleMesh;
   // #utility
-  // instantly submit commands to cmd
-  void immediate_submit(std::function<void(vk::CommandBuffer cmd)> &&function);
   void load_meshes();
   void load_obj_mesh(const std::string &path, const std::string &name);
-  void upload_mesh(Mesh &mesh);
 
   // textures
   // TODO: move to own file
-  std::optional<AllocatedImage> load_image_from_file(const std::string &path);
+  std::shared_ptr<Texture>
+  load_image_texture_from_file(const std::string &path);
   // std::unordered_map<std::string, Texture> m_loadedTextures;
   vk::DescriptorSetLayout m_singleTextureSetLayout;
   void load_images();
 
   // scene
   void init_scene();
+  void update_scene();
   glm::mat4 m_viewMatrix;
   GPUSceneData m_sceneParameters;
 
@@ -224,6 +220,9 @@ private:
   void input_handle_keyup(SDL_Scancode &key);
 
   void init_ngp();
+  // opaquely define this so that we don't have to include ngp just for the
+  // type ultra nasty tbh but at this point wtf
+  std::shared_ptr<void> nerfRO;
 };
 
 } // namespace vkr

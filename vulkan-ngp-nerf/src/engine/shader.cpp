@@ -38,7 +38,8 @@ void VulkanEngine::init_shader_modules() {
        "assets/shaders/basic_normalcolor_mesh.vert.spv"},
       {"basic_vertexcolor_mesh.vert",
        "assets/shaders/basic_vertexcolor_mesh.vert.spv"},
-      {"textured_lit.frag", "assets/shaders/textured_lit.frag.spv"}};
+      {"textured_lit.frag", "assets/shaders/textured_lit.frag.spv"},
+      {"nerf_ss.frag", "assets/shaders/nerf_ss.frag.spv"}};
 
   for (auto shader : m_shaderFiles) {
     auto mod = load_shader_module(shader.second.c_str());

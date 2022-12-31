@@ -11,20 +11,21 @@ project(vulkan-ngp-nerf
 )
 
 # ccache build optimization
+set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "mold -run")
 find_program(CCACHE "ccache")
 if(CCACHE)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE}")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "mold -run ${CCACHE}")
 endif()
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 # need to match instant ngp cuda arch
 # https://github.com/NVlabs/instant-ngp/issues/194
 # set(CMAKE_CUDA_ARCHITECTURES ${TCNN_CUDA_ARCHITECTURES})
 set(CMAKE_CUDA_ARCHITECTURES 86)
 list(APPEND CUDA_NVCC_FLAGS "-gencode=arch=compute_86,code=\"sm_86,compute_86\"")
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
@@ -48,17 +49,19 @@ find_package(CUDA REQUIRED)
 add_subdirectory(thirdparty)
 
 add_executable(engine
-	src/pipeline.cpp
 	src/main.cu
 	src/engine.cpp
+	src/mesh.cpp
+	src/pipeline.cpp
+
 	src/engine/input.cpp
 	src/engine/init.cu
 	src/engine/material.cpp
 	src/engine/shader.cpp
 	src/engine/draw.cpp
-	src/engine/scene.cpp
+	src/engine/scene.cu
 	src/engine/mesh.cpp
-	src/mesh.cpp
+	src/engine/ngp.cu
 	src/engine/textures.cpp
     )
 
@@ -82,6 +85,8 @@ target_link_libraries(engine PRIVATE
 	# stb-image
 	ngp
 	)
+
+# add_compile_definitions("VMA_IMPLEMENTATION")
 
 add_subdirectory(assets)
 add_dependencies(engine Shaders)

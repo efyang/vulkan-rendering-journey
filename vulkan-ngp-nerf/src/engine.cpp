@@ -7,6 +7,7 @@
 #include <SDL_vulkan.h>
 
 #include <glm/common.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include "constants.h"
 #include "engine.hpp"
@@ -46,6 +47,8 @@ void VulkanEngine::run() {
       input_handle_keydown(sc);
     }
 
+    spdlog::info("glm viewmat:\n{}", glm::to_string(m_viewMatrix).c_str());
+    update_scene();
     draw();
   }
 }

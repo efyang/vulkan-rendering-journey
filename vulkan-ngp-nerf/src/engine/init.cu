@@ -15,7 +15,7 @@
 #include <neural-graphics-primitives/dlss.h>
 #include <neural-graphics-primitives/common.h>
 #include <neural-graphics-primitives/render_buffer.h>
-#include <ngp.h>
+#include <ngp.hpp>
 
 // ngx
 #include <nvsdk_ngx_vk.h>
@@ -309,6 +309,13 @@ void VulkanEngine::init_commands() {
   vk::CommandBufferAllocateInfo instantCommandBufferAllocateInfo(
       m_uploadContext.commandPool, vk::CommandBufferLevel::ePrimary, 1);
   m_uploadContext.commandBuffer =
+      m_device.allocateCommandBuffers(instantCommandBufferAllocateInfo)[0];
+
+  m_ngpUploadContext.commandPool =
+      m_device.createCommandPool(uploadCommandPoolInfo);
+  m_mainDeletionQueue.push_function(
+      [&] { m_device.destroyCommandPool(m_ngpUploadContext.commandPool); });
+  m_ngpUploadContext.commandBuffer =
       m_device.allocateCommandBuffers(instantCommandBufferAllocateInfo)[0];
 
   vk::CommandPoolCreateFlags commandPoolCreateFlags;
@@ -657,6 +664,9 @@ void VulkanEngine::init_pipelines() {
   vk::PipelineLayout texturedPipelineLayout =
       m_device.createPipelineLayout(texturedPipelineCreateInfo);
 
+  vk::PipelineLayout nerfTexturedPipelineLayout =
+      m_device.createPipelineLayout(texturedPipelineCreateInfo);
+
   // default vertices
   VertexInputDescription vertexDescription = Vertex::get_vertex_description();
   pipelineBuilder.vertexInputInfo.setVertexAttributeDescriptions(
@@ -698,11 +708,28 @@ void VulkanEngine::init_pipelines() {
   vk::Pipeline texPipeline = pipelineBuilder.build(m_device, m_renderPass);
   create_material(texPipeline, texturedPipelineLayout, "texturedmesh");
 
+  // nerf pipeline
+  pipelineBuilder.pipelineLayout = nerfTexturedPipelineLayout;
+  pipelineBuilder.shaderStages.clear();
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eVertex,
+          m_shaderModules["basic_normalcolor_mesh.vert"]));
+  pipelineBuilder.shaderStages.push_back(
+      PipelineBuilder::default_pipeline_shader_stage_create_info(
+          vk::ShaderStageFlagBits::eFragment,
+          m_shaderModules["nerf_ss.frag"]));
+  vk::Pipeline nerfPipeline = pipelineBuilder.build(m_device, m_renderPass);
+  create_material(nerfPipeline, nerfTexturedPipelineLayout, "nerfmesh");
+
+
+
   //
 
   m_mainDeletionQueue.push_function([=]() {
     m_device.destroyPipeline(m_meshPipeline);
     m_device.destroyPipeline(texPipeline);
+    m_device.destroyPipeline(nerfPipeline);
     m_device.destroyPipelineLayout(m_meshPipelineLayout);
     m_device.destroyPipelineLayout(texturedPipelineLayout);
   });
@@ -741,11 +768,21 @@ void VulkanEngine::init_ngp() {
 	    m_physicalDevice,
 		m_device,
 		m_graphicsQueue,
-		m_uploadContext.commandPool,
-		m_uploadContext.commandBuffer);
+		m_ngpUploadContext.commandPool,
+		m_ngpUploadContext.commandBuffer);
 
   // ------------------------------ NGP test code -------------------------------------
+  nerfRO = std::make_shared<NerfRenderObject>(192, 108, "../instant-ngp/data/nerf/fox/base.msgpack", *this);
+  // nerfRO = (void *)newNerfRenderObject(1920, 1080, "../instant-ngp/data/nerf/fox/base.msgpack", *this);
+  Eigen::Matrix<float, 3, 4> camera_matrix;
+  // taken from basic init of instant-ngp testbed
+  camera_matrix << 1, 0, 0, 0.5,
+        0, -1,  0, 0.5,
+        0,  0, -1,   2;
+  std::static_pointer_cast<NerfRenderObject>(nerfRO)->update(camera_matrix, *this);
+  // this->nerfRO = std::static_pointer_cast<void>(nerfRO);
   // initialize a testbed
+  /*
   ngp::Testbed testbed(ngp::ETestbedMode::Nerf);
   // load the fox snapshot
   testbed.load_snapshot("../instant-ngp/data/nerf/fox/base.msgpack");
@@ -848,21 +885,6 @@ void VulkanEngine::init_ngp() {
                   vk::ImageLayout::eTransferDstOptimal,
                   blitRegion,
                   vk::Filter::eNearest);
-/*
-    // now transform image to shader optimal reading
-    vk::ImageMemoryBarrier imageBarrier_toReadable;
-    imageBarrier_toReadable.setImage(newImage.image);
-    imageBarrier_toReadable.setOldLayout(vk::ImageLayout::eTransferDstOptimal);
-    imageBarrier_toReadable.setNewLayout(
-        vk::ImageLayout::eShaderReadOnlyOptimal);
-    imageBarrier_toReadable.setSubresourceRange(range);
-    imageBarrier_toReadable.setSrcAccessMask(
-        vk::AccessFlagBits::eTransferWrite);
-    imageBarrier_toReadable.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr,
-                        nullptr, imageBarrier_toReadable);
-*/
   });
 
   m_mainDeletionQueue.push_function(
@@ -909,6 +931,6 @@ void VulkanEngine::init_ngp() {
 
   m_mainDeletionQueue.push_function(
       [=] { m_device.destroyImageView(ngpnerf.imageView); });
-
+*/
 }
 } // namespace vkr
