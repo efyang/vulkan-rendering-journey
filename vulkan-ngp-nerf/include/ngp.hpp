@@ -36,6 +36,7 @@ struct NerfRenderObject {
   ~NerfRenderObject();
   Eigen::Matrix<float, 3, 4> prevCameraMatrix;
   Eigen::Matrix<float, 3, 4> cameraMatrix;
+  Eigen::Vector3f bbCenter;
   void update(Eigen::Matrix<float, 3, 4> camera_matrix, VulkanEngine &engine);
 };
 } // namespace vkr

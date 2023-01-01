@@ -772,7 +772,7 @@ void VulkanEngine::init_ngp() {
 		m_ngpUploadContext.commandBuffer);
 
   // ------------------------------ NGP test code -------------------------------------
-  nerfRO = std::make_shared<NerfRenderObject>(192, 108, "../instant-ngp/data/nerf/fox/base.msgpack", *this);
+  nerfRO = std::make_shared<NerfRenderObject>(192 * 3, 108 * 3, "../instant-ngp/data/nerf/fox/base.msgpack", *this);
   // nerfRO = (void *)newNerfRenderObject(1920, 1080, "../instant-ngp/data/nerf/fox/base.msgpack", *this);
   Eigen::Matrix<float, 3, 4> camera_matrix;
   // taken from basic init of instant-ngp testbed

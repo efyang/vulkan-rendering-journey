@@ -93,7 +93,13 @@ PipelineBuilder::default_color_blend_attachment_state() {
   attachment.setColorWriteMask(
       vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
       vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
-  attachment.setBlendEnable(false);
+  attachment.setBlendEnable(true);
+  attachment.setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha);
+  attachment.setDstColorBlendFactor(vk::BlendFactor::eOneMinusDstAlpha);
+  attachment.setColorBlendOp(vk::BlendOp::eAdd);
+  attachment.setSrcAlphaBlendFactor(vk::BlendFactor::eOne);
+  attachment.setDstAlphaBlendFactor(vk::BlendFactor::eZero);
+  attachment.setAlphaBlendOp(vk::BlendOp::eAdd);
   return attachment;
 }
 

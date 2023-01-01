@@ -9,7 +9,7 @@ namespace vkr {
     testbed.load_snapshot(snapshotPath);
 
     // build centered cube mesh
-    Eigen::Vector3f bbCenter = (testbed.m_aabb.min + testbed.m_aabb.max) * 0.5;
+    bbCenter = (testbed.m_aabb.min + testbed.m_aabb.max) * 0.5;
     Eigen::Vector3f bbMin = testbed.m_aabb.min - bbCenter;
     Eigen::Vector3f bbMax = testbed.m_aabb.max - bbCenter;
     // TODO: add free for renderObject.mesh in deletion queue
@@ -80,19 +80,28 @@ namespace vkr {
 	}
 
   void NerfRenderObject::update(Eigen::Matrix<float, 3, 4> camera_matrix, VulkanEngine& engine) {
+    // AKA clear the frame
+    cudaRenderBuffer->reset_accumulation();
+    vk::Image ngpRawImage(rawVkImage->vk_image());
+
     // render nerf to the rawvktexture
+    // Eigen::Affine3f centerShift(-bbCenter);
+    // camera_matrix = camera_matrix * centerShift.matrix();
     Eigen::Vector4f rolling_shutter = Eigen::Vector4f::Zero();
     spdlog::info("Rendering nerf frame... ");
-    testbed.render_frame(prevCameraMatrix,
+    testbed.m_fov_axis=1;
+    // testbed.m_zoom=1.f;
+	  testbed.m_screen_center = Eigen::Vector2f::Constant(0.5f);
+    // testbed.m_scale=1.f;
+    testbed.set_fov(70);
+    testbed.render_frame(camera_matrix,
       camera_matrix,
       rolling_shutter,
       *cudaRenderBuffer);
     spdlog::info("Finished rendering nerf frame.");
 
-    vk::Image ngpRawImage(rawVkImage->vk_image());
-
     engine.immediate_submit([&](vk::CommandBuffer cmd) {
-    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+      vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
       // transfer texture back to transfer dst
       vk::ImageMemoryBarrier imageBarrier_toTransfer;
       imageBarrier_toTransfer.setOldLayout(vk::ImageLayout::eUndefined);

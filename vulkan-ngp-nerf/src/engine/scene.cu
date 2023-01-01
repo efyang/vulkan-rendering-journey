@@ -43,7 +43,14 @@ void VulkanEngine::init_scene() {
     // nerfROptr->renderObject->transformMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-7, 0, 0));
     nerfro.mesh = get_mesh("../instant-ngp/data/nerf/fox/base.msgpackaabbMesh");
     nerfro.material = get_material("nerfmesh");
-    nerfro.transformMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-7, 0, 0));
+    glm::mat4 translate = glm::translate(glm::mat4(1.), glm::vec3(-4, 2, 0));
+    // glm right-multiplies onto argument taken in
+    glm::mat4 rotx = glm::rotate(glm::mat4(1.), 3.14f,
+                                 glm::vec3(1., 0., 0.));
+    glm::mat4 roty = glm::rotate(glm::mat4(1.), 0.0f,
+                                 glm::vec3(0., 1., 0.));
+    nerfro.transformMatrix = translate * roty * rotx;
+    // nerfro.transformMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1, 0, 0));
     // camera matrix needs to be relative to aabb center
     // something like this
     // nerfRO.cameraMatrix = m_viewMatrix 
@@ -123,11 +130,36 @@ void VulkanEngine::init_scene() {
 
 void VulkanEngine::update_scene() {
   auto nerfROptr = std::static_pointer_cast<NerfRenderObject>(nerfRO);
+  glm::vec3 aabbShift(nerfROptr->bbCenter.x(), nerfROptr->bbCenter.y(), nerfROptr->bbCenter.z());
+  // reapply both bbshift and object transform
+  glm::mat4 translate = glm::translate(glm::mat4(1.), glm::vec3(-4, -2, 0));
+  // glm right-multiplies onto argument taken in
+  glm::mat4 rotx = glm::rotate(glm::mat4(1.), 3.14f,
+                                glm::vec3(1., 0., 0.));
+  // vulkan y is flipped?
+  // can't figure y out
+  glm::mat4 roty = glm::rotate(glm::mat4(1.), 0.0f,
+                                glm::vec3(0., 1., 0.));
+  glm::mat4 objectTransformMatrix = translate * roty * rotx;
+
+  // reapply both bbshift and object transform to bring the camera into the same basis
+  // as the object
+  glm::mat4 correctedNerfCamMatrix =
+    glm::translate(glm::mat4(1.0f), aabbShift)
+    *objectTransformMatrix 
+    * m_viewMatrix
+    ;
   Eigen::Matrix<float, 3, 4> camera_matrix;
   // taken from basic init of instant-ngp testbed
-  camera_matrix << 1, 0, 0, 0.5,
-        0, -1,  0, 0.5,
-        0,  0, -1,   2;
+  // camera_matrix << 1, 0, 0, 0.5,
+  //       0, -1,  0, 0.5,
+  //       0,  0, -1,   2;
+  for (int j = 0; j < 3; j++) {
+    for (int i = 0; i < 4; i++) {
+      camera_matrix(j, i) = correctedNerfCamMatrix[i][j];
+    }
+  }
+  camera_matrix(0, 0) *= -1;
   spdlog::info("eigen viewmat:");
   std::cout << camera_matrix << std::endl;
   nerfROptr->update(camera_matrix, *this);
